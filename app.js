@@ -91,18 +91,27 @@ async function initializeScreenData() {
         
         if (existingScreen) {
             screenData = {
-                pin: existingScreen.pin,
-                screenId: existingScreen.id,
-                registered: existingScreen.registered,
-                content: existingScreen.content,
-                lastUpdate: existingScreen.lastUpdate,
-                masterUrl: existingScreen.masterUrl
+                pin: existingScreen.pin || generateRandomString(4),
+                screenId: existingScreen.id || generateRandomString(8),
+                registered: existingScreen.registered || false,
+                content: existingScreen.content || null,
+                lastUpdate: existingScreen.lastUpdate || Date.now(),
+                masterUrl: existingScreen.masterUrl || null
             };
+            
+            // Se não houver PIN ou ID, atualizar no banco
+            if (!existingScreen.pin || !existingScreen.id) {
+                await Screen.findByIdAndUpdate(existingScreen._id, {
+                    pin: screenData.pin,
+                    id: screenData.screenId
+                });
+            }
+            
             console.log('Usando dados existentes da tela:', screenData);
             return screenData;
         }
 
-        // Gerar novos códigos APENAS se não existir nenhum registro
+        // Se não existir nenhum registro, criar novo
         const { pin, screenId } = await generateUniqueCode();
         screenData = {
             pin,
@@ -114,7 +123,14 @@ async function initializeScreenData() {
         };
 
         // Salvar os novos dados
-        await Screen.create(screenData);
+        await Screen.create({
+            pin: screenData.pin,
+            id: screenData.screenId,
+            registered: screenData.registered,
+            content: screenData.content,
+            lastUpdate: screenData.lastUpdate,
+            masterUrl: screenData.masterUrl
+        });
 
         console.log('Novos dados da tela gerados:', screenData);
         return screenData;
@@ -140,20 +156,16 @@ async function startServer() {
             try {
                 // Garantir que temos dados válidos
                 if (!screenData || !screenData.pin || !screenData.screenId) {
-                    await initializeScreenData();
+                    screenData = await initializeScreenData();
                 }
 
-                console.log('Enviando dados da tela:', {
-                    pin: screenData.pin,
-                    screenId: screenData.screenId,
-                    registered: screenData.registered
-                });
+                console.log('Enviando dados da tela:', screenData);
 
                 res.json({
                     pin: screenData.pin,
                     screenId: screenData.screenId,
                     registered: screenData.registered,
-                    masterUrl: MASTER_URL
+                    masterUrl: screenData.masterUrl || MASTER_URL
                 });
             } catch (error) {
                 console.error('Erro ao enviar dados da tela:', error);

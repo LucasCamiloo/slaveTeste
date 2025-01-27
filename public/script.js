@@ -84,15 +84,17 @@ async function checkConnectionStatus() {
             document.getElementById('registrationSection').classList.remove('hidden');
             document.getElementById('presentationSection').classList.remove('visible');
 
-            // Use cached screen data if available
-            if (!cachedScreenData) {
-                const screenDataResponse = await fetch('/screen-data');
-                cachedScreenData = await screenDataResponse.json();
+            // Usar dados em cache se disponíveis ao invés de buscar novos
+            if (cachedScreenData && cachedScreenData.pin && cachedScreenData.screenId) {
+                document.getElementById('pin').textContent = cachedScreenData.pin;
+                document.getElementById('screenId').textContent = cachedScreenData.screenId;
             }
-
-            document.getElementById('qrcode').src = `${SLAVE_URL}/generate-qr`;
-            document.getElementById('pin').textContent = cachedScreenData.pin;
-            document.getElementById('screenId').textContent = cachedScreenData.screenId;
+            
+            // Atualizar QR code apenas se não existir ou estiver com erro
+            const qrCode = document.getElementById('qrcode');
+            if (!qrCode.src || qrCode.src.includes('error')) {
+                qrCode.src = `${SLAVE_URL}/generate-qr`;
+            }
         }
     } catch (error) {
         console.error('Error checking status:', error);

@@ -386,7 +386,6 @@
     <!-- Seção de Registro -->
     <div id="registrationSection">
         <h1>Registro de Tela</h1>
-        <img id="qrcode" alt="QR Code">
         <p>PIN: <span id="pin"></span></p>
         <p>ID da Tela: <span id="screenId"></span></p>
     </div>
@@ -542,7 +541,6 @@
             
             const registrationSection = document.getElementById('registrationSection');
             const presentationSection = document.getElementById('presentationSection');
-            const qrcodeImg = document.getElementById('qrcode');
             const pinSpan = document.getElementById('pin');
             const screenIdSpan = document.getElementById('screenId');
 
@@ -553,22 +551,6 @@
 
             registrationSection.classList.remove('hidden');
             presentationSection.classList.remove('visible');
-
-            // Atualizar QR Code apenas se não estiver carregado
-            if (!qrcodeImg.src) {
-                const loadQRCode = (retryCount = 0) => {
-                    const timestamp = Date.now();
-                    qrcodeImg.src = `${SLAVE_URL}/generate-qr?t=${timestamp}`;
-                    qrcodeImg.onerror = () => {
-                        if (retryCount < 3) {
-                            console.log(`Tentativa ${retryCount + 1} de carregar QR Code`);
-                            setTimeout(() => loadQRCode(retryCount + 1), 1000);
-                        }
-                    };
-                };
-
-                loadQRCode();
-            }
 
             pinSpan.textContent = data.pin;
             screenIdSpan.textContent = data.screenId;
@@ -596,8 +578,6 @@
                     const screenDataResponse = await fetch('/screen-data');
                     const screenData = await screenDataResponse.json();
                     
-                    // Use slave's generate-qr endpoint without any parameters
-                    document.getElementById('qrcode').src = `${SLAVE_URL}/generate-qr`;
                     document.getElementById('pin').textContent = screenData.pin;
                     document.getElementById('screenId').textContent = screenData.screenId;
                 }
@@ -947,8 +927,6 @@
         function showRegistrationSection(data) {
             document.getElementById('registrationSection').classList.remove('hidden');
             document.getElementById('presentationSection').classList.remove('visible');
-            // Get QR code directly from slave without parameters - the slave already knows its own ID and PIN
-            document.getElementById('qrcode').src = `${SLAVE_URL}/generate-qr`;
             document.getElementById('pin').textContent = data.pin;
             document.getElementById('screenId').textContent = data.screenId;
         }

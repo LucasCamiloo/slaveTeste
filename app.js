@@ -5,7 +5,6 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import connectDB from './config/database.js';
 import config from './config/config.js';
-import qrcode from 'qrcode'; // Adicionar importação do qrcode
 // Only import what we need
 import { Screen, Product, File } from './models/index.js';
 
@@ -185,45 +184,6 @@ async function startServer() {
 
         app.get('/', (req, res) => {
             res.sendFile(path.join(__dirname, 'public', 'index.html'));
-        });
-
-        // Modificar a rota generate-qr para ser totalmente independente
-        app.get('/generate-qr', async (req, res) => {
-            try {
-                // Garantir que temos dados válidos da tela
-                if (!screenData || !screenData.pin || !screenData.screenId) {
-                    await initializeScreenData();
-                }
-
-                // Construir a URL de registro que será codificada no QR
-                const registrationData = {
-                    screenId: screenData.screenId,
-                    pin: screenData.pin,
-                    slaveUrl: SLAVE_URL
-                };
-
-                const registrationUrl = `${MASTER_URL}/register?${new URLSearchParams(registrationData).toString()}`;
-                
-                console.log('Gerando QR Code com dados:', registrationData);
-                console.log('URL do QR Code:', registrationUrl);
-
-                // Gerar o QR code
-                qrcode.toDataURL(registrationUrl, {
-                    errorCorrectionLevel: 'H',
-                    margin: 1,
-                    width: 300
-                }, (err, dataUrl) => {
-                    if (err) {
-                        console.error('Erro ao gerar QR Code:', err);
-                        return res.status(500).send('Erro ao gerar QR Code');
-                    }
-                    res.type('image/png');
-                    res.send(dataUrl);
-                });
-            } catch (error) {
-                console.error('Erro na rota generate-qr:', error);
-                res.status(500).send('Erro ao gerar QR Code');
-            }
         });
 
         // Atualizar o endpoint SSE para incluir um evento inicial

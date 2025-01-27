@@ -296,19 +296,22 @@ async function startServer() {
             try {
                 const { content, screenId } = req.body;
 
-                // Only update if the content is for this screen
-                if (screenId && screenId !== screenData.screenId) {
-                    console.log('Ignoring content for different screen:', screenId);
-                    return res.json({ success: true }); // Return success but don't update
+                // Garantir que o conteúdo seja apenas para esta tela específica
+                if (screenId !== screenData.screenId) {
+                    console.log(`Ignorando conteúdo destinado à tela ${screenId} (esta tela é ${screenData.screenId})`);
+                    return res.json({ 
+                        success: true, 
+                        message: 'Content ignored - wrong screen' 
+                    });
                 }
 
                 if (content) {
-                    // Update memory
+                    // Atualizar conteúdo apenas se for para esta tela
                     screenData.content = content;
                     screenData.lastUpdate = Date.now();
 
-                    // Update database
-                    const screen = await Screen.findOneAndUpdate(
+                    // Atualizar banco de dados
+                    await Screen.findOneAndUpdate(
                         { id: screenData.screenId },
                         { 
                             content: content,
@@ -317,8 +320,9 @@ async function startServer() {
                         { new: true, upsert: true }
                     );
 
-                    console.log('Content updated for screen:', screenData.screenId);
+                    console.log(`Conteúdo atualizado para tela ${screenData.screenId}`);
                 }
+                
                 res.json({ success: true });
             } catch (error) {
                 console.error('Error updating content:', error);

@@ -554,7 +554,7 @@
             registrationSection.classList.remove('hidden');
             presentationSection.classList.remove('visible');
 
-            // Atualizar QR Code com retry em caso de falha
+            // Atualizar QR Code com retry em caso de falha - usando apenas o Slave
             const loadQRCode = (retryCount = 0) => {
                 const timestamp = Date.now();
                 qrcodeImg.src = `${SLAVE_URL}/generate-qr?t=${timestamp}`;
@@ -576,7 +576,7 @@
             document.getElementById('presentationSection').classList.add('visible');
         }
 
-        // Update checkConnectionStatus to avoid unnecessary registration screen
+        // Update checkConnectionStatus to only use Slave for QR Code
         async function checkConnectionStatus() {
             try {
                 const response = await fetch('/connection-status');
@@ -588,10 +588,12 @@
                     document.getElementById('slideContent').innerHTML = '';
                     document.getElementById('registrationSection').classList.remove('hidden');
                     document.getElementById('presentationSection').classList.remove('visible');
+                    
+                    // Fetch screen data from slave
                     const screenDataResponse = await fetch('/screen-data');
                     const screenData = await screenDataResponse.json();
                     
-                    // Get QR code from slave instead of master
+                    // Use slave's generate-qr endpoint without any parameters
                     document.getElementById('qrcode').src = `${SLAVE_URL}/generate-qr`;
                     document.getElementById('pin').textContent = screenData.pin;
                     document.getElementById('screenId').textContent = screenData.screenId;

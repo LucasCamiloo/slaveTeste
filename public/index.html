@@ -960,6 +960,56 @@
             childList: true,
             subtree: true
         });
+
+        async function initializeScreenData() {
+            try {
+                // Primeiro, tentar encontrar dados existentes no banco
+                const existingScreen = await Screen.findOne({}).lean();
+                
+                if (existingScreen && existingScreen.pin && existingScreen.id) {
+                    screenData = {
+                        pin: existingScreen.pin,
+                        screenId: existingScreen.id,
+                        registered: existingScreen.registered || false,
+                        content: existingScreen.content || null,
+                        lastUpdate: existingScreen.lastUpdate || Date.now(),
+                        masterUrl: existingScreen.masterUrl || MASTER_URL
+                    };
+                    console.log('Usando dados existentes da tela:', screenData);
+                    return screenData;
+                }
+
+                // Se não existir ou estiver incompleto, gerar novos códigos
+                const { pin, screenId } = await generateUniqueCode();
+                const newScreenData = {
+                    pin,
+                    id: screenId, // Note que usamos 'id' aqui para o banco
+                    screenId, // E 'screenId' para o objeto em memória
+                    registered: false,
+                    content: null,
+                    lastUpdate: Date.now(),
+                    masterUrl: MASTER_URL
+                };
+
+                // Se já existe um registro, atualizar
+                if (existingScreen) {
+                    await Screen.findByIdAndUpdate(existingScreen._id, {
+                        pin: pin,
+                        id: screenId,
+                    });
+                } else {
+                    // Se não existe, criar novo
+                    await Screen.create(newScreenData);
+                }
+
+                screenData = newScreenData;
+                console.log('Novos dados da tela gerados:', screenData);
+                return screenData;
+            } catch (error) {
+                console.error('Erro ao inicializar dados da tela:', error);
+                throw error;
+            }
+        }
     </script>
 </body>
 </html>

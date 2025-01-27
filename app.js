@@ -83,40 +83,48 @@ async function generateUniqueCode() {
     return { pin, screenId };
 }
 
-// Inicializar dados da tela
-// Only initialize if not already exists in database
+// Modificar a função initializeScreenData
 async function initializeScreenData() {
     try {
-        // Verificar se já existem dados da tela no banco de dados
+        // Verificar se já existem dados válidos no banco de dados
         const existingScreen = await Screen.findOne({});
-        if (existingScreen && existingScreen.registered) {
-            screenData = existingScreen;
-            console.log('Dados da tela registrada carregados:', screenData);
-        } else {
-            // Gerar novos dados da tela
-            screenData = {
-                pin: generateRandomString(4),
-                screenId: generateRandomString(8),
-                registered: false,
-                content: null,
-                lastUpdate: Date.now(),
-                masterUrl: null
-            };
-
-            // Salvar ou atualizar no banco de dados
-            await Screen.findOneAndUpdate(
-                {}, // filtro vazio para atualizar o primeiro documento
-                screenData,
-                { upsert: true, new: true }
-            );
-
-            console.log('Novos dados da tela gerados:', screenData);
+        
+        if (existingScreen) {
+            // Se a tela já está registrada, manter os mesmos dados
+            if (existingScreen.registered) {
+                screenData = existingScreen;
+                console.log('Usando dados existentes da tela registrada:', screenData);
+                return screenData;
+            }
+            
+            // Se a tela não está registrada mas tem dados salvos, usar os mesmos códigos
+            if (existingScreen.pin && existingScreen.id) {
+                screenData = existingScreen;
+                console.log('Usando dados existentes da tela não registrada:', screenData);
+                return screenData;
+            }
         }
 
-        // Atualizar o cache
-        screenCache.data = screenData;
-        screenCache.lastUpdate = Date.now();
+        // Gerar novos códigos únicos apenas se não houver dados existentes
+        const { pin, screenId } = await generateUniqueCode();
+        
+        screenData = {
+            pin,
+            screenId,
+            registered: false,
+            content: null,
+            lastUpdate: Date.now(),
+            masterUrl: null
+        };
 
+        // Salvar os novos dados
+        await Screen.findOneAndUpdate(
+            {},
+            screenData,
+            { upsert: true, new: true }
+        );
+
+        console.log('Novos dados da tela gerados:', screenData);
         return screenData;
     } catch (error) {
         console.error('Erro ao inicializar dados da tela:', error);
@@ -278,7 +286,7 @@ async function startServer() {
             }
         });
 
-        // Atualizar rota de registro
+        // Atualizar rota de unregister para manter os mesmos códigos
         app.post('/unregister', async (req, res) => {
             const { screenId } = req.body;
             

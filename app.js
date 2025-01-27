@@ -176,7 +176,7 @@ async function startServer() {
             res.sendFile(path.join(__dirname, 'public', 'index.html'));
         });
 
-        // Adicionar rota para gerar QR Code
+        // Modificar a rota generate-qr para usar dados locais
         app.get('/generate-qr', async (req, res) => {
             try {
                 // Usar os dados do screenData em vez dos parâmetros da query
@@ -184,17 +184,12 @@ async function startServer() {
                     await initializeScreenData();
                 }
 
-                const qrData = {
-                    screenId: screenData.screenId,
-                    pin: screenData.pin,
-                    slaveUrl: SLAVE_URL
-                };
-
-                const qrCodeUrl = `${MASTER_URL}/register?${new URLSearchParams(qrData).toString()}`;
+                // Criar URL de registro com dados do próprio slave
+                const registrationUrl = `${MASTER_URL}/register?screenId=${screenData.screenId}&pin=${screenData.pin}&slaveUrl=${SLAVE_URL}`;
                 
-                console.log('Gerando QR Code com URL:', qrCodeUrl);
+                console.log('Gerando QR Code com URL:', registrationUrl);
 
-                qrcode.toDataURL(qrCodeUrl, (err, url) => {
+                qrcode.toDataURL(registrationUrl, (err, url) => {
                     if (err) {
                         console.error('Erro ao gerar QR Code:', err);
                         return res.status(500).send('Erro ao gerar QR Code');

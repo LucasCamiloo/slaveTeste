@@ -404,6 +404,9 @@
     </div>
 
     <script>
+        const MASTER_URL = 'https://master-teste.vercel.app';
+        const SLAVE_URL = 'https://slave-teste.vercel.app';
+
         let currentContent = null;
         let currentIndex = 0;
         let statusTimeout;
@@ -417,8 +420,7 @@
                 eventSource.close();
             }
 
-            const port = 4000;
-            eventSource = new EventSource(`http://localhost:${port}/events`);
+            eventSource = new EventSource(`${MASTER_URL}/events`);
 
             eventSource.onopen = function() {
                 console.log('SSE connection established');
@@ -520,7 +522,7 @@
         function showRegistrationSection(data) {
             document.getElementById('registrationSection').classList.remove('hidden');
             document.getElementById('presentationSection').classList.remove('visible');
-            document.getElementById('qrcode').src = `http://localhost:4000/generate-qr?screenId=${data.screenId}`;
+            document.getElementById('qrcode').src = `${MASTER_URL}/generate-qr?screenId=${data.screenId}`;
             document.getElementById('pin').textContent = data.pin;
             document.getElementById('screenId').textContent = data.screenId;
         }
@@ -544,7 +546,7 @@
                     document.getElementById('presentationSection').classList.remove('visible');
                     const screenDataResponse = await fetch('/screen-data');
                     const screenData = await screenDataResponse.json();
-                    document.getElementById('qrcode').src = `http://localhost:4000/generate-qr?screenId=${screenData.screenId}`;
+                    document.getElementById('qrcode').src = `${MASTER_URL}/generate-qr?screenId=${screenData.screenId}`;
                     document.getElementById('pin').textContent = screenData.pin;
                     document.getElementById('screenId').textContent = screenData.screenId;
                 }
@@ -620,11 +622,26 @@
             const container = document.getElementById('slideContent');
             const content = currentContent[currentIndex];
             
+            // Fix background image URLs
+            const processedContent = content.replace(
+                /(background-image:\s*url\(['"]?)http:\/\/localhost:4000/g,
+                `$1${MASTER_URL}`
+            );
+
             container.classList.remove('in');
             container.classList.add('fade');
             
             setTimeout(() => {
-                container.innerHTML = content;
+                container.innerHTML = processedContent;
+                
+                // Fix image URLs in content
+                const images = container.querySelectorAll('img');
+                images.forEach(img => {
+                    if (img.src.includes('localhost:4000')) {
+                        img.src = img.src.replace('http://localhost:4000', MASTER_URL);
+                    }
+                });
+
                 container.classList.add('in');
                 
                 if (content.includes('video-container')) {
@@ -691,7 +708,7 @@
                 
                 let imageUrl = currentItem.dataset.imageUrl;
                 if (imageUrl && !imageUrl.startsWith('http')) {
-                    imageUrl = `http://localhost:4000${imageUrl}`;
+                    imageUrl = `${MASTER_URL}${imageUrl}`;
                 }
                 
                 const featuredImage = container.querySelector('.featured-image');
@@ -700,7 +717,7 @@
 
                 featuredImage.src = imageUrl;
                 featuredImage.onerror = () => {
-                    featuredImage.src = 'http://localhost:4000/uploads/default-product.png';
+                    featuredImage.src = `${MASTER_URL}/uploads/default-product.png`;
                 };
                 
                 featuredName.textContent = currentItem.dataset.name;

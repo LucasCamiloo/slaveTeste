@@ -379,7 +379,7 @@ async function startServer() {
                         const file = await File.findById(product.fileId);
                         return {
                             ...product.toObject(),
-                            imageUrl: file ? `/files/${file._id}` : null
+                            imageUrl: file ? `/files/${file._id}` : `${MASTER_URL}/default-product.png`
                         };
                     }
                     return product.toObject();
@@ -400,7 +400,7 @@ async function startServer() {
                         success: true, 
                         product: {
                             ...product.toObject(),
-                            imageUrl: file ? `/files/${file._id}` : null
+                            imageUrl: file ? `/files/${file._id}` : `${MASTER_URL}/default-product.png`
                         }
                     });
                 } else {

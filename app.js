@@ -266,13 +266,20 @@ async function startServer() {
         // Atualizar a rota POST de conteúdo
         app.post('/content', async (req, res) => {
             try {
-                const { content } = req.body;
+                const { content, screenId } = req.body;
+
+                // Only update if the content is for this screen
+                if (screenId && screenId !== screenData.screenId) {
+                    console.log('Ignoring content for different screen:', screenId);
+                    return res.json({ success: true }); // Return success but don't update
+                }
+
                 if (content) {
-                    // Atualizar na memória
+                    // Update memory
                     screenData.content = content;
                     screenData.lastUpdate = Date.now();
 
-                    // Atualizar no banco de dados
+                    // Update database
                     const screen = await Screen.findOneAndUpdate(
                         { id: screenData.screenId },
                         { 
@@ -282,14 +289,14 @@ async function startServer() {
                         { new: true, upsert: true }
                     );
 
-                    console.log('Conteúdo atualizado no banco:', screen);
+                    console.log('Content updated for screen:', screenData.screenId);
                 }
                 res.json({ success: true });
             } catch (error) {
-                console.error('Erro ao atualizar conteúdo:', error);
+                console.error('Error updating content:', error);
                 res.status(500).json({ 
                     success: false, 
-                    message: 'Erro ao atualizar conteúdo',
+                    message: 'Error updating content',
                     error: error.message
                 });
             }

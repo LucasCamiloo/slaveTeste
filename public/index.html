@@ -739,7 +739,7 @@
 
                 featuredImage.src = imageUrl;
                 featuredImage.onerror = () => {
-                    featuredImage.src = `${MASTER_URL}/uploads/default-product.png`;
+                    featuredImage.src = `${MASTER_URL}/default-product.png`;
                 };
                 
                 featuredName.textContent = currentItem.dataset.name;
@@ -850,7 +850,7 @@
                     if (retryCount < 3) {
                         this.dataset.retryCount = (retryCount + 1).toString();
                         if (this.src.includes('default-product')) {
-                            this.src = `${MASTER_URL}/files/default-product.png`;
+                            this.src = `${MASTER_URL}/default-product.png`;
                         } else {
                             setTimeout(() => {
                                 this.src = this.src.replace(/\?.*$/, '') + '?retry=' + Date.now();

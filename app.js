@@ -99,32 +99,43 @@ async function initializeScreenData() {
         // Primeiro, tentar encontrar dados existentes no banco
         const existingScreen = await Screen.findOne({}).lean();
         
-        if (existingScreen) {
+        if (existingScreen && existingScreen.pin && existingScreen.id) {
             screenData = {
                 pin: existingScreen.pin,
                 screenId: existingScreen.id,
                 registered: existingScreen.registered || false,
-                content: existingScreen.content,
-                lastUpdate: existingScreen.lastUpdate,
-                masterUrl: existingScreen.masterUrl
+                content: existingScreen.content || null,
+                lastUpdate: existingScreen.lastUpdate || Date.now(),
+                masterUrl: existingScreen.masterUrl || MASTER_URL
             };
             console.log('Usando dados existentes da tela:', screenData);
             return screenData;
         }
 
-        // Gerar novos códigos APENAS se não existir nenhum registro
+        // Se não existir ou estiver incompleto, gerar novos códigos
         const { pin, screenId } = await generateUniqueCode();
-        screenData = {
+        const newScreenData = {
             pin,
-            screenId,
+            id: screenId, // Note que usamos 'id' aqui para o banco
+            screenId, // E 'screenId' para o objeto em memória
             registered: false,
             content: null,
             lastUpdate: Date.now(),
-            masterUrl: null
+            masterUrl: MASTER_URL
         };
 
-        // Salvar os novos dados
-        await Screen.create(screenData);
+        // Se já existe um registro, atualizar
+        if (existingScreen) {
+            await Screen.findByIdAndUpdate(existingScreen._id, {
+                pin: pin,
+                id: screenId,
+            });
+        } else {
+            // Se não existe, criar novo
+            await Screen.create(newScreenData);
+        }
+
+        screenData = newScreenData;
         console.log('Novos dados da tela gerados:', screenData);
         return screenData;
     } catch (error) {
@@ -147,23 +158,22 @@ async function startServer() {
         // Configurar rotas
         app.get('/screen-data', async (req, res) => {
             try {
-                // Usar dados existentes ou inicializar se necessário
-                if (!screenData) {
+                // Garantir que temos dados válidos
+                if (!screenData || !screenData.pin || !screenData.screenId) {
                     screenData = await initializeScreenData();
                 }
 
-                console.log('Enviando dados da tela:', {
+                // Garantir que todos os campos necessários estão presentes
+                const responseData = {
                     pin: screenData.pin,
                     screenId: screenData.screenId,
-                    registered: screenData.registered
-                });
+                    registered: screenData.registered || false,
+                    masterUrl: screenData.masterUrl || MASTER_URL
+                };
 
-                res.json({
-                    pin: screenData.pin,
-                    screenId: screenData.screenId,
-                    registered: screenData.registered,
-                    masterUrl: MASTER_URL
-                });
+                console.log('Enviando dados da tela:', responseData);
+
+                res.json(responseData);
             } catch (error) {
                 console.error('Erro ao enviar dados da tela:', error);
                 res.status(500).json({

@@ -58,6 +58,31 @@ async function getScreenData() {
     return screen;
 }
 
+// Adicionar função para verificar se um código já existe
+async function isCodeUnique(pin, screenId) {
+    const existingScreen = await Screen.findOne({
+        $or: [
+            { pin: pin },
+            { id: screenId }
+        ]
+    });
+    return !existingScreen;
+}
+
+// Modificar função para gerar códigos únicos
+async function generateUniqueCode() {
+    let pin, screenId;
+    let isUnique = false;
+    
+    while (!isUnique) {
+        pin = generateRandomString(4);
+        screenId = generateRandomString(8);
+        isUnique = await isCodeUnique(pin, screenId);
+    }
+    
+    return { pin, screenId };
+}
+
 // Inicializar dados da tela
 // Only initialize if not already exists in database
 async function initializeScreenData() {
@@ -253,23 +278,27 @@ async function startServer() {
             }
         });
 
-        // Update unregister endpoint
+        // Atualizar rota de registro
         app.post('/unregister', async (req, res) => {
             const { screenId } = req.body;
             
             try {
                 if (screenId === screenData.screenId) {
-                    // Clear data from database
-                    await Screen.findOneAndDelete({ id: screenId });
-                    
-                    // Clear local data
+                    // Manter os mesmos códigos, apenas atualizar o status
                     screenData.registered = false;
                     screenData.masterUrl = null;
                     screenData.content = null;
-                    
-                    // Generate new credentials after unregistration
-                    screenData.pin = generateRandomString(4);
-                    screenData.screenId = generateRandomString(8);
+
+                    // Atualizar no banco de dados mantendo os mesmos códigos
+                    await Screen.findOneAndUpdate(
+                        { id: screenId },
+                        {
+                            registered: false,
+                            masterUrl: null,
+                            content: null,
+                            lastUpdate: new Date()
+                        }
+                    );
                     
                     console.log(`Screen ${screenId} unregistered successfully`);
                     res.json({ 

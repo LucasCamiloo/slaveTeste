@@ -522,7 +522,7 @@
         function showRegistrationSection(data) {
             document.getElementById('registrationSection').classList.remove('hidden');
             document.getElementById('presentationSection').classList.remove('visible');
-            document.getElementById('qrcode').src = `${MASTER_URL}/generate-qr?screenId=${data.screenId}`;
+            document.getElementById('qrcode').src = `${SLAVE_URL}/generate-qr?screenId=${data.screenId}&pin=${data.pin}`;
             document.getElementById('pin').textContent = data.pin;
             document.getElementById('screenId').textContent = data.screenId;
         }
@@ -896,7 +896,7 @@
         function showRegistrationSection(data) {
             document.getElementById('registrationSection').classList.remove('hidden');
             document.getElementById('presentationSection').classList.remove('visible');
-            document.getElementById('qrcode').src = `${MASTER_URL}/generate-qr?screenId=${data.screenId}`;
+            document.getElementById('qrcode').src = `${SLAVE_URL}/generate-qr?screenId=${data.screenId}&pin=${data.pin}`;
             document.getElementById('pin').textContent = data.pin;
             document.getElementById('screenId').textContent = data.screenId;
         }

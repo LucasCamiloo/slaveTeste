@@ -64,9 +64,9 @@ async function initializeScreenData() {
     try {
         // Verificar se já existem dados da tela no banco de dados
         const existingScreen = await Screen.findOne({});
-        if (existingScreen) {
+        if (existingScreen && existingScreen.registered) {
             screenData = existingScreen;
-            console.log('Dados da tela carregados do banco de dados:', screenData);
+            console.log('Dados da tela registrada carregados:', screenData);
         } else {
             // Gerar novos dados da tela
             screenData = {
@@ -78,10 +78,21 @@ async function initializeScreenData() {
                 masterUrl: null
             };
 
-            // Salvar os novos dados no banco de dados
-            await Screen.create(screenData);
-            console.log('Novos dados da tela gerados e salvos no banco de dados:', screenData);
+            // Salvar ou atualizar no banco de dados
+            await Screen.findOneAndUpdate(
+                {}, // filtro vazio para atualizar o primeiro documento
+                screenData,
+                { upsert: true, new: true }
+            );
+
+            console.log('Novos dados da tela gerados:', screenData);
         }
+
+        // Atualizar o cache
+        screenCache.data = screenData;
+        screenCache.lastUpdate = Date.now();
+
+        return screenData;
     } catch (error) {
         console.error('Erro ao inicializar dados da tela:', error);
         throw error;
@@ -100,13 +111,32 @@ async function startServer() {
         console.log('Dados da tela inicializados');
 
         // Configurar rotas
-        app.get('/screen-data', (req, res) => {
-            res.json({
-                pin: screenData.pin,
-                screenId: screenData.screenId,
-                registered: screenData.registered,
-                masterUrl: MASTER_URL // Add masterUrl to response
-            });
+        app.get('/screen-data', async (req, res) => {
+            try {
+                // Garantir que temos dados válidos
+                if (!screenData || !screenData.pin || !screenData.screenId) {
+                    await initializeScreenData();
+                }
+
+                console.log('Enviando dados da tela:', {
+                    pin: screenData.pin,
+                    screenId: screenData.screenId,
+                    registered: screenData.registered
+                });
+
+                res.json({
+                    pin: screenData.pin,
+                    screenId: screenData.screenId,
+                    registered: screenData.registered,
+                    masterUrl: MASTER_URL
+                });
+            } catch (error) {
+                console.error('Erro ao enviar dados da tela:', error);
+                res.status(500).json({
+                    success: false,
+                    message: 'Erro ao recuperar dados da tela'
+                });
+            }
         });
 
         app.get('/', (req, res) => {
@@ -114,20 +144,34 @@ async function startServer() {
         });
 
         // Adicionar rota para gerar QR Code
-        app.get('/generate-qr', (req, res) => {
-            const { screenId, pin } = req.query;
-            if (!screenId || !pin) {
-                return res.status(400).send('Missing screenId or pin');
-            }
-
-            const qrCodeUrl = `${SLAVE_URL}/register?screenId=${screenId}&pin=${pin}`;
-            qrcode.toDataURL(qrCodeUrl, (err, url) => {
-                if (err) {
-                    console.error('Error generating QR Code:', err);
-                    return res.status(500).send('Error generating QR Code');
+        app.get('/generate-qr', async (req, res) => {
+            try {
+                // Usar os dados do screenData em vez dos parâmetros da query
+                if (!screenData || !screenData.pin || !screenData.screenId) {
+                    await initializeScreenData();
                 }
-                res.send(url);
-            });
+
+                const qrData = {
+                    screenId: screenData.screenId,
+                    pin: screenData.pin,
+                    slaveUrl: SLAVE_URL
+                };
+
+                const qrCodeUrl = `${MASTER_URL}/register?${new URLSearchParams(qrData).toString()}`;
+                
+                console.log('Gerando QR Code com URL:', qrCodeUrl);
+
+                qrcode.toDataURL(qrCodeUrl, (err, url) => {
+                    if (err) {
+                        console.error('Erro ao gerar QR Code:', err);
+                        return res.status(500).send('Erro ao gerar QR Code');
+                    }
+                    res.send(url);
+                });
+            } catch (error) {
+                console.error('Erro na rota generate-qr:', error);
+                res.status(500).send('Erro ao gerar QR Code');
+            }
         });
 
         // Atualizar o endpoint SSE para incluir um evento inicial

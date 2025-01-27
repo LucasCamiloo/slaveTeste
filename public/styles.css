@@ -1,0 +1,157 @@
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --primary-color: #007bff;
+    --secondary-color: #6c757d;
+    --success-color: #28a745;
+    --danger-color: #dc3545;
+    --dark-bg: #1a1a1a;
+    --light-bg: #f8f9fa;
+    --border-radius: 8px;
+    --spacing-sm: 0.5rem;
+    --spacing-md: 1rem;
+    --spacing-lg: 1.5rem;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: var(--light-bg);
+    color: #333;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 20px;
+    overflow-x: hidden;
+}
+
+.device-list {
+    width: 100%;
+    max-width: 600px;
+    margin-top: 20px;
+}
+
+.device {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background-color: #fff;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    margin-bottom: 10px;
+}
+
+.device img {
+    width: 50px;
+    height: auto;
+}
+
+.device-info {
+    flex: 1;
+    margin-left: 15px;
+}
+
+.device-info h3 {
+    margin-bottom: 5px;
+    font-size: 18px;
+}
+
+.device-info span {
+    font-size: 14px;
+    color: green;
+}
+
+.device-info .status.inoperante {
+    color: red;
+}
+
+.actions {
+    display: flex;
+    gap: 10px;
+}
+
+.actions button {
+    background-color: transparent;
+    border: none;
+    border-radius: 4px;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.actions button:hover {
+    transform: translateY(-2px);
+}
+
+.actions button i {
+    font-size: 1.2rem;
+}
+
+.view-btn:hover {
+    background-color: #17a2b8;
+    color: white;
+}
+
+.edit-btn:hover {
+    background-color: #ffc107;
+    color: white;
+}
+
+.ad-btn:hover {
+    background-color: #28a745;
+    color: white;
+}
+
+.delete-btn:hover {
+    background-color: #dc3545;
+    color: white;
+}
+
+.actions button svg {
+    width: 20px;
+    height: 20px;
+    fill: #333;
+}
+
+.ad-container {
+    background: var(--light-bg);
+    width: 100%;
+    height: 100%;
+    position: relative;
+    background-size: cover !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+}
+
+.bg-duo1 {
+    background-image: url('https://master-teste.vercel.app/fundos/duo1.jpg') !important;
+}
+
+.bg-duo2 {
+    background-image: url('https://master-teste.vercel.app/fundos/duo2.jpg') !important;
+}
+
+@media (max-width: 768px) {
+    .device {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .device-info {
+        margin: 10px 0;
+    }
+
+    .actions {
+        width: 100%;
+        justify-content: space-around;
+    }
+}

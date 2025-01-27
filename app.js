@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import connectDB from './config/database.js';
 import config from './config/config.js';
+import qrcode from 'qrcode'; // Adicionar importação do qrcode
 // Only import what we need
 import { Screen, Product, File } from './models/index.js';
 
@@ -57,54 +58,32 @@ async function getScreenData() {
     return screen;
 }
 
-// Add session persistence
-function getStoredScreenData() {
-    try {
-        const stored = localStorage.getItem('screenData');
-        return stored ? JSON.parse(stored) : null;
-    } catch (error) {
-        console.error('Error reading stored screen data:', error);
-        return null;
-    }
-}
-
-function storeScreenData(data) {
-    try {
-        localStorage.setItem('screenData', JSON.stringify(data));
-    } catch (error) {
-        console.error('Error storing screen data:', error);
-    }
-}
-
 // Inicializar dados da tela
 // Only initialize if not already exists in database
 async function initializeScreenData() {
     try {
-        // Generate new screen data every time
-        screenData = {
-            pin: generateRandomString(4),
-            screenId: generateRandomString(8),
-            registered: false,
-            content: null,
-            lastUpdate: Date.now(),
-            masterUrl: null
-        };
+        // Verificar se já existem dados da tela no banco de dados
+        const existingScreen = await Screen.findOne({});
+        if (existingScreen) {
+            screenData = existingScreen;
+            console.log('Dados da tela carregados do banco de dados:', screenData);
+        } else {
+            // Gerar novos dados da tela
+            screenData = {
+                pin: generateRandomString(4),
+                screenId: generateRandomString(8),
+                registered: false,
+                content: null,
+                lastUpdate: Date.now(),
+                masterUrl: null
+            };
 
-        // Store the new data
-        storeScreenData(screenData);
-        console.log('Generated new screen data:', screenData);
-        
-        // Save to database without checking for existing
-        await Screen.create({
-            id: screenData.screenId,
-            pin: screenData.pin,
-            registered: false,
-            dateRegistered: new Date()
-        });
-
-        return screenData;
+            // Salvar os novos dados no banco de dados
+            await Screen.create(screenData);
+            console.log('Novos dados da tela gerados e salvos no banco de dados:', screenData);
+        }
     } catch (error) {
-        console.error('Error initializing screen data:', error);
+        console.error('Erro ao inicializar dados da tela:', error);
         throw error;
     }
 }
@@ -132,6 +111,23 @@ async function startServer() {
 
         app.get('/', (req, res) => {
             res.sendFile(path.join(__dirname, 'public', 'index.html'));
+        });
+
+        // Adicionar rota para gerar QR Code
+        app.get('/generate-qr', (req, res) => {
+            const { screenId, pin } = req.query;
+            if (!screenId || !pin) {
+                return res.status(400).send('Missing screenId or pin');
+            }
+
+            const qrCodeUrl = `${SLAVE_URL}/register?screenId=${screenId}&pin=${pin}`;
+            qrcode.toDataURL(qrCodeUrl, (err, url) => {
+                if (err) {
+                    console.error('Error generating QR Code:', err);
+                    return res.status(500).send('Error generating QR Code');
+                }
+                res.send(url);
+            });
         });
 
         // Atualizar o endpoint SSE para incluir um evento inicial
@@ -190,25 +186,16 @@ async function startServer() {
                     });
                 }
 
-                // Only save to database on successful registration
-                const screen = await Screen.findOneAndUpdate(
-                    { id: screenId },
-                    {
-                        id: screenId,
-                        pin: pin,
-                        registered: true,
-                        masterUrl: masterUrl,
-                        dateRegistered: new Date(),
-                        lastUpdate: new Date()
-                    },
-                    { upsert: true, new: true }
-                );
-
-                // Update local data
+                // Atualizar dados da tela no banco de dados
                 screenData.registered = true;
                 screenData.masterUrl = masterUrl;
+                await Screen.findOneAndUpdate(
+                    { id: screenId },
+                    { registered: true, masterUrl: masterUrl, lastUpdate: new Date() },
+                    { new: true }
+                );
 
-                console.log('Registration successful:', screen);
+                console.log('Registration successful:', screenData);
                 return res.json({
                     success: true,
                     message: `Screen ${screenId} registered successfully!`
@@ -239,9 +226,6 @@ async function startServer() {
                     // Generate new credentials after unregistration
                     screenData.pin = generateRandomString(4);
                     screenData.screenId = generateRandomString(8);
-                    
-                    // Store updated data
-                    storeScreenData(screenData);
                     
                     console.log(`Screen ${screenId} unregistered successfully`);
                     res.json({ 
@@ -359,7 +343,6 @@ async function startServer() {
                 if (!screen && screenData.registered) {
                     screenData.registered = false;
                     screenData.masterUrl = null;
-                    storeScreenData(screenData);
                 }
 
                 res.json({

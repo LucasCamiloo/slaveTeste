@@ -45,32 +45,25 @@ function generateDeviceId() {
     return newId;
 }
 
-// Replace initialize function with cached version
+// Modificar initialize para guardar dados iniciais
 async function initialize() {
     try {
         const deviceId = generateDeviceId();
         
-        // Obter dados da tela incluindo o deviceId
-        const screenDataResponse = await fetch('/screen-data', {
-            headers: {
-                'X-Device-Id': deviceId
+        // Buscar dados da tela apenas uma vez
+        if (!cachedScreenData) {
+            const screenDataResponse = await fetch('/screen-data', {
+                headers: {
+                    'X-Device-Id': deviceId
+                }
+            });
+            cachedScreenData = await screenDataResponse.json();
+            
+            if (!cachedScreenData.pin || !cachedScreenData.screenId) {
+                throw new Error('Dados da tela inválidos');
             }
-        });
-        
-        const screenData = await screenDataResponse.json();
-        
-        // Validar dados essenciais
-        if (!screenData || !screenData.pin || !screenData.screenId) {
-            throw new Error('Dados da tela inválidos: resposta vazia');
         }
 
-        console.log('Dados da tela recebidos:', screenData);
-        
-        // Atualizar cache com os novos dados
-        cachedScreenData = screenData;
-        lastScreenDataUpdate = Date.now();
-
-        // Resto da inicialização
         const statusResponse = await fetch('/connection-status');
         const statusData = await statusResponse.json();
 
@@ -78,10 +71,11 @@ async function initialize() {
             showPresentationSection();
             startPresentation();
         } else {
-            showRegistrationSection(screenData);
+            showRegistrationSection(cachedScreenData);
         }
 
         initSSE();
+        // Aumentar intervalo de verificação
         setInterval(checkConnectionStatus, 30000);
     } catch (error) {
         console.error('Erro de inicialização:', error);
@@ -89,29 +83,23 @@ async function initialize() {
     }
 }
 
-// Update checkConnectionStatus to use cached data
+// Modificar o checkConnectionStatus para não buscar novos dados
 async function checkConnectionStatus() {
     try {
         const response = await fetch('/connection-status');
         const data = await response.json();
         updateConnectionStatus(data);
 
-        // Only refresh registration screen if not registered AND not showing content
+        // Apenas atualizar a interface se não estiver registrado
         if (!data.registered && !currentContent) {
             document.getElementById('slideContent').innerHTML = '';
             document.getElementById('registrationSection').classList.remove('hidden');
             document.getElementById('presentationSection').classList.remove('visible');
 
-            // Usar dados em cache se disponíveis ao invés de buscar novos
-            if (cachedScreenData && cachedScreenData.pin && cachedScreenData.screenId) {
+            // Usar dados em cache existentes
+            if (cachedScreenData) {
                 document.getElementById('pin').textContent = cachedScreenData.pin;
                 document.getElementById('screenId').textContent = cachedScreenData.screenId;
-            }
-            
-            // Atualizar QR code apenas se não existir ou estiver com erro
-            const qrCode = document.getElementById('qrcode');
-            if (!qrCode.src || qrCode.src.includes('error')) {
-                qrCode.src = `${SLAVE_URL}/generate-qr`;
             }
         }
     } catch (error) {

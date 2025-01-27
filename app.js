@@ -96,25 +96,35 @@ async function generateUniqueCode() {
 // Modificar a função initializeScreenData
 async function initializeScreenData() {
     try {
-        // Gerar novos códigos para cada nova inicialização
-        const { pin, screenId } = await generateUniqueCode();
+        // Primeiro, tentar encontrar dados existentes no banco
+        const existingScreen = await Screen.findOne({}).lean();
         
-        // Criar novo registro no banco
-        const newScreen = {
+        if (existingScreen) {
+            screenData = {
+                pin: existingScreen.pin,
+                screenId: existingScreen.id,
+                registered: existingScreen.registered || false,
+                content: existingScreen.content,
+                lastUpdate: existingScreen.lastUpdate,
+                masterUrl: existingScreen.masterUrl
+            };
+            console.log('Usando dados existentes da tela:', screenData);
+            return screenData;
+        }
+
+        // Gerar novos códigos APENAS se não existir nenhum registro
+        const { pin, screenId } = await generateUniqueCode();
+        screenData = {
             pin,
-            id: screenId,
+            screenId,
             registered: false,
             content: null,
             lastUpdate: Date.now(),
             masterUrl: null
         };
 
-        // Salvar no banco de dados
-        await Screen.create(newScreen);
-
-        // Atualizar screenData em memória
-        screenData = { ...newScreen, screenId: newScreen.id };
-
+        // Salvar os novos dados
+        await Screen.create(screenData);
         console.log('Novos dados da tela gerados:', screenData);
         return screenData;
     } catch (error) {
@@ -137,8 +147,10 @@ async function startServer() {
         // Configurar rotas
         app.get('/screen-data', async (req, res) => {
             try {
-                // Sempre gerar novos dados para cada requisição
-                screenData = await initializeScreenData();
+                // Usar dados existentes ou inicializar se necessário
+                if (!screenData) {
+                    screenData = await initializeScreenData();
+                }
 
                 console.log('Enviando dados da tela:', {
                     pin: screenData.pin,
@@ -409,22 +421,11 @@ async function startServer() {
         // Update connection status check
         app.get('/connection-status', async (req, res) => {
             try {
-                // Usar os dados existentes do screenData sem recarregar do banco
-                // a menos que seja necessário
-                if (!screenData || !screenData.screenId) {
-                    const screen = await Screen.findOne({});
-                    if (screen) {
-                        screenData = {
-                            pin: screen.pin,
-                            screenId: screen.id,
-                            registered: screen.registered,
-                            masterUrl: screen.masterUrl,
-                            lastUpdate: screen.lastUpdate
-                        };
-                    }
+                // Usar dados em memória
+                if (!screenData) {
+                    screenData = await initializeScreenData();
                 }
 
-                // Retornar os dados atuais sem fazer modificações
                 res.json({
                     registered: screenData.registered,
                     screenId: screenData.screenId,
@@ -433,12 +434,11 @@ async function startServer() {
                 });
             } catch (error) {
                 console.error('Error checking connection status:', error);
-                // Em caso de erro, retornar os dados em memória
                 res.json({
-                    registered: screenData?.registered || false,
-                    screenId: screenData?.screenId,
-                    masterUrl: screenData?.masterUrl,
-                    lastUpdate: screenData?.lastUpdate
+                    registered: false,
+                    screenId: null,
+                    masterUrl: null,
+                    lastUpdate: null
                 });
             }
         });

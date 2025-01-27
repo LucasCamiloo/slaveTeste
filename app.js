@@ -176,25 +176,38 @@ async function startServer() {
             res.sendFile(path.join(__dirname, 'public', 'index.html'));
         });
 
-        // Modificar a rota generate-qr para usar dados locais
+        // Modificar a rota generate-qr para ser totalmente independente
         app.get('/generate-qr', async (req, res) => {
             try {
-                // Usar os dados do screenData em vez dos parâmetros da query
+                // Garantir que temos dados válidos da tela
                 if (!screenData || !screenData.pin || !screenData.screenId) {
                     await initializeScreenData();
                 }
 
-                // Criar URL de registro com dados do próprio slave
-                const registrationUrl = `${MASTER_URL}/register?screenId=${screenData.screenId}&pin=${screenData.pin}&slaveUrl=${SLAVE_URL}`;
-                
-                console.log('Gerando QR Code com URL:', registrationUrl);
+                // Construir a URL de registro que será codificada no QR
+                const registrationData = {
+                    screenId: screenData.screenId,
+                    pin: screenData.pin,
+                    slaveUrl: SLAVE_URL
+                };
 
-                qrcode.toDataURL(registrationUrl, (err, url) => {
+                const registrationUrl = `${MASTER_URL}/register?${new URLSearchParams(registrationData).toString()}`;
+                
+                console.log('Gerando QR Code com dados:', registrationData);
+                console.log('URL do QR Code:', registrationUrl);
+
+                // Gerar o QR code
+                qrcode.toDataURL(registrationUrl, {
+                    errorCorrectionLevel: 'H',
+                    margin: 1,
+                    width: 300
+                }, (err, dataUrl) => {
                     if (err) {
                         console.error('Erro ao gerar QR Code:', err);
                         return res.status(500).send('Erro ao gerar QR Code');
                     }
-                    res.send(url);
+                    res.type('image/png');
+                    res.send(dataUrl);
                 });
             } catch (error) {
                 console.error('Erro na rota generate-qr:', error);

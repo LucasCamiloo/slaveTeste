@@ -496,13 +496,26 @@
             }
         }
 
-        function handleRegistrationUpdate(data) {
+        async function handleRegistrationUpdate(data) {
+            // Verificar se a atualização é para esta tela
+            const screenDataResponse = await fetch('/screen-data');
+            const screenData = await screenDataResponse.json();
+            
+            // Só processar atualizações destinadas a esta tela
+            if (data.targetScreen && data.targetScreen !== screenData.screenId) {
+                console.log('Ignorando atualização destinada a outra tela');
+                return;
+            }
+
             if (data.registered) {
                 showPresentationSection();
                 startPresentation();
                 showSuccessMessage('Conexão estabelecida com sucesso!');
+            } else if (data.action === 'content_update' && data.content) {
+                currentContent = Array.isArray(data.content) ? data.content : [data.content];
+                currentIndex = 0;
+                showSlide();
             } else if (data.action === 'name_update') {
-                // Manter na seção de apresentação ao atualizar o nome
                 showPresentationSection();
                 startPresentation();
             } else {

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro de Tela</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            text-align: center;
+        }
+        .qr-code {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Registro de Tela</h1>
+        <p><strong>PIN:</strong> <span id="pin"></span></p>
+        <p><strong>Screen ID:</strong> <span id="screenId"></span></p>
+        <div class="qr-code">
+            <img id="qrCode" alt="QR Code">
+        </div>
+    </div>
+
+    <script>
+        async function fetchScreenData() {
+            try {
+                const response = await fetch('/screen-data');
+                if (!response.ok) {
+                    throw new Error('Failed to fetch screen data');
+                }
+                const data = await response.json();
+                document.getElementById('pin').textContent = data.pin;
+                document.getElementById('screenId').textContent = data.screenId;
+
+                const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(data.screenId)}&size=200x200`;
+                document.getElementById('qrCode').src = qrCodeUrl;
+            } catch (error) {
+                console.error('Erro ao carregar dados da tela:', error);
+            }
+        }
+
+        fetchScreenData();
+
+        // Aguardar o registro e então redirecionar
+        async function handleRegistration(response) {
+            const data = await response.json();
+            if (data.success && data.redirect) {
+                window.location.href = '/display.html';
+            }
+        }
+
+        // Escutar por mensagens do master
+        window.addEventListener('message', async (event) => {
+            if (event.data.type === 'register') {
+                try {
+                    const response = await fetch('/register', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(event.data.data)
+                    });
+                    
+                    await handleRegistration(response);
+                } catch (error) {
+                    console.error('Registration error:', error);
+                }
+            }
+        });
+    </script>
+</body>
+</html>

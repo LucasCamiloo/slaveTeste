@@ -19,6 +19,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+const MASTER_URL = process.env.MASTER_URL || 'https://master-teste.vercel.app';
+const SLAVE_URL = process.env.SLAVE_URL || 'https://slave-teste.vercel.app';
+
 function generateRandomString(length) {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
@@ -98,7 +101,8 @@ async function startServer() {
             res.json({
                 pin: screenData.pin,
                 screenId: screenData.screenId,
-                registered: screenData.registered
+                registered: screenData.registered,
+                masterUrl: MASTER_URL // Add masterUrl to response
             });
         });
 

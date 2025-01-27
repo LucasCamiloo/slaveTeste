@@ -590,7 +590,9 @@
                     document.getElementById('presentationSection').classList.remove('visible');
                     const screenDataResponse = await fetch('/screen-data');
                     const screenData = await screenDataResponse.json();
-                    document.getElementById('qrcode').src = `${MASTER_URL}/generate-qr?screenId=${screenData.screenId}`;
+                    
+                    // Get QR code from slave instead of master
+                    document.getElementById('qrcode').src = `${SLAVE_URL}/generate-qr`;
                     document.getElementById('pin').textContent = screenData.pin;
                     document.getElementById('screenId').textContent = screenData.screenId;
                 }
@@ -940,7 +942,8 @@
         function showRegistrationSection(data) {
             document.getElementById('registrationSection').classList.remove('hidden');
             document.getElementById('presentationSection').classList.remove('visible');
-            document.getElementById('qrcode').src = `${SLAVE_URL}/generate-qr?screenId=${data.screenId}&pin=${data.pin}`;
+            // Get QR code directly from slave without parameters - the slave already knows its own ID and PIN
+            document.getElementById('qrcode').src = `${SLAVE_URL}/generate-qr`;
             document.getElementById('pin').textContent = data.pin;
             document.getElementById('screenId').textContent = data.screenId;
         }

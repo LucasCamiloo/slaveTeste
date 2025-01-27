@@ -591,6 +591,9 @@
                 if (data.content) {
                     const contentArray = Array.isArray(data.content) ? data.content : [data.content];
                     
+                    // Store content in localStorage as backup
+                    localStorage.setItem('lastContent', JSON.stringify(contentArray));
+                    
                     // Verificar se o conteúdo é diferente antes de atualizar
                     if (JSON.stringify(currentContent) !== JSON.stringify(contentArray)) {
                         console.log('Novo conteúdo recebido:', contentArray);
@@ -605,9 +608,22 @@
                             console.error('Elementos necessários não encontrados');
                         }
                     }
+                } else {
+                    // Try to load from localStorage if no content from server
+                    const savedContent = localStorage.getItem('lastContent');
+                    if (savedContent && (!currentContent || currentContent.length === 0)) {
+                        currentContent = JSON.parse(savedContent);
+                        showSlide();
+                    }
                 }
             } catch (error) {
                 console.error('Erro ao carregar conteúdo:', error);
+                // Try to recover from localStorage
+                const savedContent = localStorage.getItem('lastContent');
+                if (savedContent && (!currentContent || currentContent.length === 0)) {
+                    currentContent = JSON.parse(savedContent);
+                    showSlide();
+                }
             }
         }
 
@@ -819,14 +835,21 @@
         function fixImageUrls() {
             const images = document.querySelectorAll('img');
             images.forEach(img => {
-                if (img.src.includes('localhost:4000')) {
-                    img.src = img.src.replace('http://localhost:4000', MASTER_URL);
+                if (!img.dataset.retryCount) {
+                    img.dataset.retryCount = '0';
                 }
-                
-                // Add error handler for images
+
                 img.onerror = function() {
-                    if (this.src.includes('default-product')) {
-                        this.src = `${MASTER_URL}/files/default-product.png`;
+                    const retryCount = parseInt(this.dataset.retryCount);
+                    if (retryCount < 3) {
+                        this.dataset.retryCount = (retryCount + 1).toString();
+                        if (this.src.includes('default-product')) {
+                            this.src = `${MASTER_URL}/files/default-product.png`;
+                        } else {
+                            setTimeout(() => {
+                                this.src = this.src.replace(/\?.*$/, '') + '?retry=' + Date.now();
+                            }, 1000 * (retryCount + 1));
+                        }
                     }
                 };
             });

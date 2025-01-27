@@ -35,24 +35,42 @@ async function getScreenData() {
     }
 }
 
+// Adicionar função para gerar ID de dispositivo único
+function generateDeviceId() {
+    const storedId = localStorage.getItem('deviceId');
+    if (storedId) return storedId;
+    
+    const newId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('deviceId', newId);
+    return newId;
+}
+
 // Replace initialize function with cached version
 async function initialize() {
     try {
-        // Obter dados da tela primeiro
-        const screenDataResponse = await fetch('/screen-data');
+        const deviceId = generateDeviceId();
+        
+        // Obter dados da tela incluindo o deviceId
+        const screenDataResponse = await fetch('/screen-data', {
+            headers: {
+                'X-Device-Id': deviceId
+            }
+        });
+        
         const screenData = await screenDataResponse.json();
         
         // Validar dados essenciais
-        if (!screenData || typeof screenData !== 'object') {
+        if (!screenData || !screenData.pin || !screenData.screenId) {
             throw new Error('Dados da tela inválidos: resposta vazia');
         }
 
-        console.log('Dados da tela recebidos:', screenData); // Debug log
-
-        // Atualizar cache
+        console.log('Dados da tela recebidos:', screenData);
+        
+        // Atualizar cache com os novos dados
         cachedScreenData = screenData;
+        lastScreenDataUpdate = Date.now();
 
-        // Verificar status de registro
+        // Resto da inicialização
         const statusResponse = await fetch('/connection-status');
         const statusData = await statusResponse.json();
 

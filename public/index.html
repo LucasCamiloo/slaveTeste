@@ -814,6 +814,74 @@
                 // ...load slides or videos here...
             }
         }
+
+        // Fix image loading
+        function fixImageUrls() {
+            const images = document.querySelectorAll('img');
+            images.forEach(img => {
+                if (img.src.includes('localhost:4000')) {
+                    img.src = img.src.replace('http://localhost:4000', MASTER_URL);
+                }
+                
+                // Add error handler for images
+                img.onerror = function() {
+                    if (this.src.includes('default-product')) {
+                        this.src = `${MASTER_URL}/files/default-product.png`;
+                    }
+                };
+            });
+        }
+
+        // Fix background images
+        function fixBackgroundImages() {
+            const elements = document.querySelectorAll('[style*="background-image"]');
+            elements.forEach(el => {
+                const style = el.getAttribute('style');
+                if (style && style.includes('localhost:4000')) {
+                    const newStyle = style.replace(/http:\/\/localhost:4000/g, MASTER_URL);
+                    el.setAttribute('style', newStyle);
+                }
+            });
+        }
+
+        async function loadContent() {
+            try {
+                const response = await fetch('/content');
+                const data = await response.json();
+                
+                if (data.content) {
+                    const contentArray = Array.isArray(data.content) ? data.content : [data.content];
+                    if (JSON.stringify(currentContent) !== JSON.stringify(contentArray)) {
+                        currentContent = contentArray.map(content => 
+                            content.replace(/http:\/\/localhost:4000/g, MASTER_URL)
+                        );
+                        currentIndex = 0;
+                        showSlide();
+                    }
+                }
+            } catch (error) {
+                console.error('Erro ao carregar conteúdo:', error);
+            }
+        }
+
+        function showRegistrationSection(data) {
+            document.getElementById('registrationSection').classList.remove('hidden');
+            document.getElementById('presentationSection').classList.remove('visible');
+            document.getElementById('qrcode').src = `${MASTER_URL}/generate-qr?screenId=${data.screenId}`;
+            document.getElementById('pin').textContent = data.pin;
+            document.getElementById('screenId').textContent = data.screenId;
+        }
+
+        // Add handlers to fix URLs after content updates
+        const observer = new MutationObserver(() => {
+            fixImageUrls();
+            fixBackgroundImages();
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
     </script>
 </body>
 </html>

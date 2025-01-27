@@ -115,7 +115,6 @@ function showRegistrationSection(data) {
     
     const registrationSection = document.getElementById('registrationSection');
     const presentationSection = document.getElementById('presentationSection');
-    const qrcodeImg = document.getElementById('qrcode');
     const pinSpan = document.getElementById('pin');
     const screenIdSpan = document.getElementById('screenId');
 
@@ -131,7 +130,6 @@ function showRegistrationSection(data) {
     
     pinSpan.textContent = data.pin;
     screenIdSpan.textContent = data.screenId;
-    qrcodeImg.src = `${SLAVE_URL}/generate-qr?t=${Date.now()}`;
 }
 
 // Update handleRegistrationUpdate to maintain connection

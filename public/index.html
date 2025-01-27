@@ -468,16 +468,21 @@
                 } else {
                     const screenDataResponse = await fetch('/screen-data');
                     const screenData = await screenDataResponse.json();
+                    
+                    if (!screenData.pin || !screenData.screenId) {
+                        console.error('Dados da tela inválidos:', screenData);
+                        showConnectionError();
+                        return;
+                    }
+                    
+                    console.log('Dados da tela recebidos:', screenData);
                     showRegistrationSection(screenData);
                 }
 
-                // Initialize SSE connection
                 initSSE();
-
-                // Adicionar verificação periódica do status
                 setInterval(checkConnectionStatus, 5000);
             } catch (error) {
-                console.error('Initialization error:', error);
+                console.error('Erro de inicialização:', error);
                 showConnectionError();
             }
         }
@@ -520,11 +525,37 @@
         }
 
         function showRegistrationSection(data) {
-            document.getElementById('registrationSection').classList.remove('hidden');
-            document.getElementById('presentationSection').classList.remove('visible');
-            document.getElementById('qrcode').src = `${SLAVE_URL}/generate-qr?screenId=${data.screenId}&pin=${data.pin}`;
-            document.getElementById('pin').textContent = data.pin;
-            document.getElementById('screenId').textContent = data.screenId;
+            console.log('Mostrando seção de registro com dados:', data);
+            
+            const registrationSection = document.getElementById('registrationSection');
+            const presentationSection = document.getElementById('presentationSection');
+            const qrcodeImg = document.getElementById('qrcode');
+            const pinSpan = document.getElementById('pin');
+            const screenIdSpan = document.getElementById('screenId');
+
+            if (!data || !data.pin || !data.screenId) {
+                console.error('Dados inválidos recebidos:', data);
+                return;
+            }
+
+            registrationSection.classList.remove('hidden');
+            presentationSection.classList.remove('visible');
+
+            // Atualizar QR Code com retry em caso de falha
+            const loadQRCode = (retryCount = 0) => {
+                const timestamp = Date.now();
+                qrcodeImg.src = `${SLAVE_URL}/generate-qr?t=${timestamp}`;
+                qrcodeImg.onerror = () => {
+                    if (retryCount < 3) {
+                        console.log(`Tentativa ${retryCount + 1} de carregar QR Code`);
+                        setTimeout(() => loadQRCode(retryCount + 1), 1000);
+                    }
+                };
+            };
+
+            loadQRCode();
+            pinSpan.textContent = data.pin;
+            screenIdSpan.textContent = data.screenId;
         }
 
         function showPresentationSection() {

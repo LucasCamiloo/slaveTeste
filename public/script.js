@@ -12,21 +12,37 @@ const RECONNECT_DELAY = 3000;
 // Add cache for screen data
 let cachedScreenData = null;
 
+// Adicionar um timestamp para controle de cache
+let lastScreenDataUpdate = 0;
+const CACHE_DURATION = 300000; // 5 minutos
+
+async function getScreenData() {
+    const now = Date.now();
+    
+    // Usar cache se disponível e dentro do período de validade
+    if (cachedScreenData && (now - lastScreenDataUpdate) < CACHE_DURATION) {
+        return cachedScreenData;
+    }
+
+    try {
+        const response = await fetch('/screen-data');
+        cachedScreenData = await response.json();
+        lastScreenDataUpdate = now;
+        return cachedScreenData;
+    } catch (error) {
+        console.error('Erro ao buscar dados da tela:', error);
+        return cachedScreenData; // Retornar cache mesmo expirado em caso de erro
+    }
+}
+
 // Replace initialize function with cached version
 async function initialize() {
     try {
-        // Try to get screen data first
-        if (!cachedScreenData) {
-            const screenDataResponse = await fetch('/screen-data');
-            cachedScreenData = await screenDataResponse.json();
-            
-            if (!cachedScreenData.pin || !cachedScreenData.screenId) {
-                console.error('Dados da tela inválidos:', cachedScreenData);
-                showConnectionError();
-                return;
-            }
-            
-            console.log('Dados iniciais da tela:', cachedScreenData);
+        const screenData = await getScreenData();
+        if (!screenData || !screenData.pin || !screenData.screenId) {
+            console.error('Dados da tela inválidos:', screenData);
+            showConnectionError();
+            return;
         }
 
         const statusResponse = await fetch('/connection-status');
@@ -36,11 +52,12 @@ async function initialize() {
             showPresentationSection();
             startPresentation();
         } else {
-            showRegistrationSection(cachedScreenData);
+            showRegistrationSection(screenData);
         }
 
         initSSE();
-        setInterval(checkConnectionStatus, 5000);
+        // Reduzir frequência de verificação
+        setInterval(checkConnectionStatus, 30000); // 30 segundos
     } catch (error) {
         console.error('Erro de inicialização:', error);
         showConnectionError();

@@ -45,25 +45,27 @@ function generateDeviceId() {
     return newId;
 }
 
-// Modificar initialize para guardar dados iniciais
+// Modificar initialize para garantir dados válidos
 async function initialize() {
     try {
-        const deviceId = generateDeviceId();
+        // Buscar dados da tela
+        const screenDataResponse = await fetch('/screen-data');
+        const screenData = await screenDataResponse.json();
         
-        // Buscar dados da tela apenas uma vez
-        if (!cachedScreenData) {
-            const screenDataResponse = await fetch('/screen-data', {
-                headers: {
-                    'X-Device-Id': deviceId
-                }
-            });
-            cachedScreenData = await screenDataResponse.json();
-            
-            if (!cachedScreenData.pin || !cachedScreenData.screenId) {
-                throw new Error('Dados da tela inválidos');
-            }
+        console.log('Dados da tela recebidos:', screenData);
+
+        // Validar dados essenciais
+        if (!screenData || !screenData.pin || !screenData.screenId) {
+            console.error('Dados da tela inválidos ou incompletos:', screenData);
+            showConnectionError();
+            return;
         }
 
+        // Atualizar cache
+        cachedScreenData = screenData;
+        lastScreenDataUpdate = Date.now();
+
+        // Verificar status de registro
         const statusResponse = await fetch('/connection-status');
         const statusData = await statusResponse.json();
 
@@ -75,7 +77,6 @@ async function initialize() {
         }
 
         initSSE();
-        // Aumentar intervalo de verificação
         setInterval(checkConnectionStatus, 30000);
     } catch (error) {
         console.error('Erro de inicialização:', error);
@@ -108,9 +109,9 @@ async function checkConnectionStatus() {
     }
 }
 
-// Update showRegistrationSection to use cached data
+// Modificar showRegistrationSection para garantir exibição dos dados
 function showRegistrationSection(data) {
-    console.log('Mostrando seção de registro com dados:', data); // Debug log
+    console.log('Mostrando seção de registro com dados:', data);
     
     const registrationSection = document.getElementById('registrationSection');
     const presentationSection = document.getElementById('presentationSection');
@@ -118,29 +119,19 @@ function showRegistrationSection(data) {
     const pinSpan = document.getElementById('pin');
     const screenIdSpan = document.getElementById('screenId');
 
-    // Garantir que a seção de registro esteja visível
+    // Garantir que temos dados válidos
+    if (!data || !data.pin || !data.screenId) {
+        console.error('Dados inválidos para registro:', data);
+        return;
+    }
+
+    // Atualizar a interface
     registrationSection.classList.remove('hidden');
     presentationSection.classList.remove('visible');
-
-    // Atualizar PIN e ID mesmo se forem undefined
-    pinSpan.textContent = data.pin || 'Carregando...';
-    screenIdSpan.textContent = data.screenId || 'Carregando...';
-
-    // Tentar carregar QR Code
-    const loadQRCode = (retryCount = 0) => {
-        const timestamp = Date.now();
-        qrcodeImg.src = `${SLAVE_URL}/generate-qr?t=${timestamp}`;
-        qrcodeImg.onerror = () => {
-            if (retryCount < 3) {
-                console.log(`Tentativa ${retryCount + 1} de carregar QR Code`);
-                setTimeout(() => loadQRCode(retryCount + 1), 1000);
-            } else {
-                qrcodeImg.alt = 'Erro ao carregar QR Code';
-            }
-        };
-    };
-
-    loadQRCode();
+    
+    pinSpan.textContent = data.pin;
+    screenIdSpan.textContent = data.screenId;
+    qrcodeImg.src = `${SLAVE_URL}/generate-qr?t=${Date.now()}`;
 }
 
 // Update handleRegistrationUpdate to maintain connection

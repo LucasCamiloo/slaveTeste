@@ -554,19 +554,22 @@
             registrationSection.classList.remove('hidden');
             presentationSection.classList.remove('visible');
 
-            // Atualizar QR Code com retry em caso de falha - usando apenas o Slave
-            const loadQRCode = (retryCount = 0) => {
-                const timestamp = Date.now();
-                qrcodeImg.src = `${SLAVE_URL}/generate-qr?t=${timestamp}`;
-                qrcodeImg.onerror = () => {
-                    if (retryCount < 3) {
-                        console.log(`Tentativa ${retryCount + 1} de carregar QR Code`);
-                        setTimeout(() => loadQRCode(retryCount + 1), 1000);
-                    }
+            // Atualizar QR Code apenas se não estiver carregado
+            if (!qrcodeImg.src) {
+                const loadQRCode = (retryCount = 0) => {
+                    const timestamp = Date.now();
+                    qrcodeImg.src = `${SLAVE_URL}/generate-qr?t=${timestamp}`;
+                    qrcodeImg.onerror = () => {
+                        if (retryCount < 3) {
+                            console.log(`Tentativa ${retryCount + 1} de carregar QR Code`);
+                            setTimeout(() => loadQRCode(retryCount + 1), 1000);
+                        }
+                    };
                 };
-            };
 
-            loadQRCode();
+                loadQRCode();
+            }
+
             pinSpan.textContent = data.pin;
             screenIdSpan.textContent = data.screenId;
         }

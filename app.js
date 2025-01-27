@@ -58,31 +58,44 @@ async function getScreenData() {
 }
 
 // Inicializar dados da tela
+// Only initialize if not already exists in database
 async function initializeScreenData() {
-    screenData = {
-        pin: generateRandomString(4),
-        screenId: generateRandomString(8),
-        registered: false,
-        content: null,
-        lastUpdate: Date.now(),
-        masterUrl: null
-    };
-
-    // Salvar dados iniciais no banco
     try {
-        const screen = await Screen.findOneAndUpdate(
-            { id: screenData.screenId },
-            { 
-                ...screenData,
-                dateRegistered: new Date()
-            },
-            { upsert: true, new: true }
-        );
-        console.log('Screen data initialized:', screen);
+        // First check if we have saved data
+        const savedScreen = await Screen.findOne()
+            .sort({ dateRegistered: -1 })
+            .limit(1);
+
+        if (savedScreen) {
+            screenData = {
+                pin: savedScreen.pin || generateRandomString(4),
+                screenId: savedScreen.id,
+                registered: savedScreen.registered || false,
+                content: savedScreen.content || null,
+                lastUpdate: savedScreen.lastUpdate || Date.now(),
+                masterUrl: savedScreen.masterUrl || null
+            };
+            console.log('Loaded existing screen data:', screenData);
+            return screenData;
+        }
+
+        // If no saved data, create new
+        screenData = {
+            pin: generateRandomString(4),
+            screenId: generateRandomString(8),
+            registered: false,
+            content: null,
+            lastUpdate: Date.now(),
+            masterUrl: null
+        };
+
+        // Only save to database during actual registration
+        console.log('Generated new screen data:', screenData);
+        return screenData;
     } catch (error) {
         console.error('Error initializing screen data:', error);
+        throw error;
     }
-    return screenData;
 }
 
 // Inicialização do app
@@ -152,6 +165,7 @@ async function startServer() {
                     });
                 }
 
+                // Validate credentials
                 if (pin !== screenData.pin || screenId !== screenData.screenId) {
                     console.log('Invalid credentials:', {
                         expectedPin: screenData.pin,
@@ -165,34 +179,26 @@ async function startServer() {
                     });
                 }
 
-                // Atualizar dados locais
+                // Only save to database on successful registration
+                const screen = await Screen.findOneAndUpdate(
+                    { id: screenId },
+                    {
+                        id: screenId,
+                        pin: pin,
+                        registered: true,
+                        masterUrl: masterUrl,
+                        dateRegistered: new Date(),
+                        lastUpdate: new Date()
+                    },
+                    { upsert: true, new: true }
+                );
+
+                // Update local data
                 screenData.registered = true;
                 screenData.masterUrl = masterUrl;
 
-                // Atualizar no banco de dados
-                try {
-                    await Screen.findOneAndUpdate(
-                        { id: screenId },
-                        {
-                            registered: true,
-                            masterUrl,
-                            lastUpdate: new Date()
-                        },
-                        { upsert: true, new: true }
-                    );
-
-                    console.log('Registration successful:', screenData);
-
-                    return res.json({
-                        success: true,
-                        message: `Screen ${screenId} registered successfully!`
-                    });
-                } catch (dbError) {
-                    console.error('Database error during registration:', dbError);
-                    // Continuar mesmo com erro no banco
-                }
-
-                res.json({
+                console.log('Registration successful:', screen);
+                return res.json({
                     success: true,
                     message: `Screen ${screenId} registered successfully!`
                 });

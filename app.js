@@ -57,29 +57,38 @@ async function getScreenData() {
     return screen;
 }
 
+// Add session persistence
+function getStoredScreenData() {
+    try {
+        const stored = localStorage.getItem('screenData');
+        return stored ? JSON.parse(stored) : null;
+    } catch (error) {
+        console.error('Error reading stored screen data:', error);
+        return null;
+    }
+}
+
+function storeScreenData(data) {
+    try {
+        localStorage.setItem('screenData', JSON.stringify(data));
+    } catch (error) {
+        console.error('Error storing screen data:', error);
+    }
+}
+
 // Inicializar dados da tela
 // Only initialize if not already exists in database
 async function initializeScreenData() {
     try {
-        // First check if we have saved data
-        const savedScreen = await Screen.findOne()
-            .sort({ dateRegistered: -1 })
-            .limit(1);
-
-        if (savedScreen) {
-            screenData = {
-                pin: savedScreen.pin || generateRandomString(4),
-                screenId: savedScreen.id,
-                registered: savedScreen.registered || false,
-                content: savedScreen.content || null,
-                lastUpdate: savedScreen.lastUpdate || Date.now(),
-                masterUrl: savedScreen.masterUrl || null
-            };
-            console.log('Loaded existing screen data:', screenData);
+        // First try to get stored data
+        const storedData = getStoredScreenData();
+        if (storedData) {
+            screenData = storedData;
+            console.log('Using stored screen data:', screenData);
             return screenData;
         }
 
-        // If no saved data, create new
+        // If no stored data, generate new
         screenData = {
             pin: generateRandomString(4),
             screenId: generateRandomString(8),
@@ -89,7 +98,8 @@ async function initializeScreenData() {
             masterUrl: null
         };
 
-        // Only save to database during actual registration
+        // Store the new data
+        storeScreenData(screenData);
         console.log('Generated new screen data:', screenData);
         return screenData;
     } catch (error) {
@@ -211,16 +221,44 @@ async function startServer() {
             }
         });
 
-        app.post('/unregister', (req, res) => {
+        // Update unregister endpoint
+        app.post('/unregister', async (req, res) => {
             const { screenId } = req.body;
-            if (screenId === screenData.screenId) {
-                screenData.registered = false;
-                screenData.masterUrl = null;
-                screenData.content = null;
-                console.log(`Tela ${screenId} desregistrada com sucesso!`);
-                res.json({ success: true, message: `Tela ${screenId} desregistrada com sucesso!` });
-            } else {
-                res.status(400).json({ success: false, message: 'ID da tela incorreto' });
+            
+            try {
+                if (screenId === screenData.screenId) {
+                    // Clear data from database
+                    await Screen.findOneAndDelete({ id: screenId });
+                    
+                    // Clear local data
+                    screenData.registered = false;
+                    screenData.masterUrl = null;
+                    screenData.content = null;
+                    
+                    // Generate new credentials after unregistration
+                    screenData.pin = generateRandomString(4);
+                    screenData.screenId = generateRandomString(8);
+                    
+                    // Store updated data
+                    storeScreenData(screenData);
+                    
+                    console.log(`Screen ${screenId} unregistered successfully`);
+                    res.json({ 
+                        success: true, 
+                        message: `Screen ${screenId} unregistered successfully`
+                    });
+                } else {
+                    res.status(400).json({ 
+                        success: false, 
+                        message: 'Invalid screen ID' 
+                    });
+                }
+            } catch (error) {
+                console.error('Error during unregister:', error);
+                res.status(500).json({ 
+                    success: false, 
+                    message: 'Internal server error' 
+                });
             }
         });
 
@@ -294,18 +332,36 @@ async function startServer() {
             }
         });
 
-        // Atualizar rota de connection-status
+        // Update connection status check
         app.get('/connection-status', async (req, res) => {
             try {
+                if (!screenData.registered) {
+                    return res.json({
+                        registered: false,
+                        screenId: screenData.screenId,
+                        masterUrl: null,
+                        lastUpdate: screenData.lastUpdate
+                    });
+                }
+
                 const screen = await Screen.findOne({ id: screenData.screenId });
+                const isRegistered = screen && screen.registered;
+                
+                // If not found in database but marked as registered locally, clear registration
+                if (!screen && screenData.registered) {
+                    screenData.registered = false;
+                    screenData.masterUrl = null;
+                    storeScreenData(screenData);
+                }
+
                 res.json({
-                    registered: screen ? screen.registered : screenData.registered,
+                    registered: isRegistered,
                     screenId: screenData.screenId,
-                    masterUrl: screen ? screen.masterUrl : screenData.masterUrl,
-                    lastUpdate: screen ? screen.lastUpdate : screenData.lastUpdate
+                    masterUrl: screen?.masterUrl || screenData.masterUrl,
+                    lastUpdate: screen?.lastUpdate || screenData.lastUpdate
                 });
             } catch (error) {
-                console.error('Erro ao verificar status de conexão:', error);
+                console.error('Error checking connection status:', error);
                 res.json({
                     registered: screenData.registered,
                     screenId: screenData.screenId,

@@ -532,15 +532,15 @@
             document.getElementById('presentationSection').classList.add('visible');
         }
 
+        // Update checkConnectionStatus to avoid unnecessary registration screen
         async function checkConnectionStatus() {
             try {
                 const response = await fetch('/connection-status');
                 const data = await response.json();
                 updateConnectionStatus(data);
 
-                // Se não estiver registrado, limpa o conteúdo e volta para tela de registro
-                if (!data.registered) {
-                    currentContent = null;
+                // Only show registration if we're not registered AND not showing content
+                if (!data.registered && !currentContent) {
                     document.getElementById('slideContent').innerHTML = '';
                     document.getElementById('registrationSection').classList.remove('hidden');
                     document.getElementById('presentationSection').classList.remove('visible');
@@ -551,7 +551,7 @@
                     document.getElementById('screenId').textContent = screenData.screenId;
                 }
             } catch (error) {
-                console.error('Erro ao verificar status:', error);
+                console.error('Error checking status:', error);
                 showConnectionError();
             }
         }
@@ -582,7 +582,7 @@
             statusElement.classList.add('disconnected');
         }
 
-        // Função para carregar e exibir conteúdo
+        // Update loadContent to maintain content during connection issues
         async function loadContent() {
             try {
                 const response = await fetch('/content');
@@ -631,11 +631,17 @@
         let isTransitioning = false;
         let slideTimeout = null;
 
+        // Update showSlide to maintain state during transitions
         async function showSlide() {
             if (isTransitioning) return;
             isTransitioning = true;
 
             const container = document.getElementById('slideContent');
+            if (!currentContent || !currentContent[currentIndex]) {
+                isTransitioning = false;
+                return;
+            }
+
             const content = currentContent[currentIndex];
             
             // Fix background image URLs

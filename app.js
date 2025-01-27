@@ -80,19 +80,7 @@ function storeScreenData(data) {
 // Only initialize if not already exists in database
 async function initializeScreenData() {
     try {
-        // First try to get stored data
-        const storedData = getStoredScreenData();
-        if (storedData) {
-            // Verify if the stored data is still valid
-            const screen = await Screen.findOne({ id: storedData.screenId });
-            if (screen && screen.registered) {
-                screenData = storedData;
-                console.log('Using stored screen data:', screenData);
-                return screenData;
-            }
-        }
-
-        // If no valid stored data, generate new
+        // Generate new screen data every time
         screenData = {
             pin: generateRandomString(4),
             screenId: generateRandomString(8),
@@ -106,17 +94,13 @@ async function initializeScreenData() {
         storeScreenData(screenData);
         console.log('Generated new screen data:', screenData);
         
-        // Also save to database
-        await Screen.findOneAndUpdate(
-            { id: screenData.screenId },
-            {
-                id: screenData.screenId,
-                pin: screenData.pin,
-                registered: false,
-                dateRegistered: new Date()
-            },
-            { upsert: true }
-        );
+        // Save to database without checking for existing
+        await Screen.create({
+            id: screenData.screenId,
+            pin: screenData.pin,
+            registered: false,
+            dateRegistered: new Date()
+        });
 
         return screenData;
     } catch (error) {

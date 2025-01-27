@@ -86,28 +86,24 @@ async function generateUniqueCode() {
 // Modificar a função initializeScreenData
 async function initializeScreenData() {
     try {
-        // Verificar se já existem dados válidos no banco de dados
+        // Primeiro, tentar encontrar dados existentes no banco
         const existingScreen = await Screen.findOne({});
         
         if (existingScreen) {
-            // Se a tela já está registrada, manter os mesmos dados
-            if (existingScreen.registered) {
-                screenData = existingScreen;
-                console.log('Usando dados existentes da tela registrada:', screenData);
-                return screenData;
-            }
-            
-            // Se a tela não está registrada mas tem dados salvos, usar os mesmos códigos
-            if (existingScreen.pin && existingScreen.id) {
-                screenData = existingScreen;
-                console.log('Usando dados existentes da tela não registrada:', screenData);
-                return screenData;
-            }
+            screenData = {
+                pin: existingScreen.pin,
+                screenId: existingScreen.id,
+                registered: existingScreen.registered,
+                content: existingScreen.content,
+                lastUpdate: existingScreen.lastUpdate,
+                masterUrl: existingScreen.masterUrl
+            };
+            console.log('Usando dados existentes da tela:', screenData);
+            return screenData;
         }
 
-        // Gerar novos códigos únicos apenas se não houver dados existentes
+        // Gerar novos códigos APENAS se não existir nenhum registro
         const { pin, screenId } = await generateUniqueCode();
-        
         screenData = {
             pin,
             screenId,
@@ -118,11 +114,7 @@ async function initializeScreenData() {
         };
 
         // Salvar os novos dados
-        await Screen.findOneAndUpdate(
-            {},
-            screenData,
-            { upsert: true, new: true }
-        );
+        await Screen.create(screenData);
 
         console.log('Novos dados da tela gerados:', screenData);
         return screenData;

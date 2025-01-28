@@ -91,17 +91,11 @@ async function checkConnectionStatus() {
         const data = await response.json();
         updateConnectionStatus(data);
 
-        // Apenas atualizar a interface se não estiver registrado
+        // Apenas atualizar a interface se o status de registro mudar
         if (!data.registered && !currentContent) {
             document.getElementById('slideContent').innerHTML = '';
             document.getElementById('registrationSection').classList.remove('hidden');
             document.getElementById('presentationSection').classList.remove('visible');
-
-            // Usar dados em cache existentes
-            if (cachedScreenData) {
-                document.getElementById('pin').textContent = cachedScreenData.pin;
-                document.getElementById('screenId').textContent = cachedScreenData.screenId;
-            }
         }
     } catch (error) {
         console.error('Error checking status:', error);

@@ -84,76 +84,28 @@ async function getScreenData() {
 // Ensure initializeScreenData is called only once during server startup
 let isInitialized = false;
 
-// Modificar a função initializeScreenData para evitar duplicações
+// Modify initializeScreenData to NOT create new data if none is found
 async function initializeScreenData() {
     if (isInitialized) {
         console.log('Screen data already initialized.');
         return screenData;
     }
 
-    try {
-        console.log('Iniciando inicialização dos dados...');
-
-        // Primeiro, verificar se já temos dados válidos
-        const existingData = await getScreenData();
-        if (existingData?.pin && existingData?.screenId) {
-            console.log('Usando dados existentes:', existingData);
-            isInitialized = true;
-            return existingData;
-        }
-
-        // Se não houver dados, criar novo registro
-        console.log('Gerando novos dados...');
-        const pin = generateRandomString(4).toUpperCase();
-        const screenId = generateRandomString(8);
-        
-        const newScreenData = {
-            pin,
-            id: screenId,
-            screenId,
-            registered: false,
-            content: null,
-            lastUpdate: Date.now(),
-            masterUrl: null
-        };
-
-        try {
-            // Verificar novamente antes de criar para evitar duplicação
-            const doubleCheck = await Screen.findOne({}).lean();
-            if (doubleCheck?.pin && doubleCheck?.id) {
-                console.log('Dados encontrados em segunda verificação:', doubleCheck);
-                screenData = {
-                    pin: doubleCheck.pin,
-                    screenId: doubleCheck.id,
-                    registered: doubleCheck.registered || false,
-                    content: doubleCheck.content || null,
-                    lastUpdate: doubleCheck.lastUpdate || Date.now(),
-                    masterUrl: doubleCheck.masterUrl || MASTER_URL
-                };
-                isInitialized = true;
-                return screenData;
-            }
-
-            // Criar novo registro no banco
-            console.log('Salvando novos dados no banco...');
-            await Screen.create(newScreenData);
-            screenData = newScreenData;
-            isInitialized = true;
-            console.log('Novos dados salvos com sucesso:', screenData);
-            return screenData;
-        } catch (dbError) {
-            if (dbError.code === 11000) { // Duplicate key error
-                console.log('Detectada tentativa de duplicação, recuperando dados existentes...');
-                screenData = await getScreenData();
-                isInitialized = true;
-                return screenData;
-            }
-            throw dbError;
-        }
-    } catch (error) {
-        console.error('Erro na inicialização:', error);
-        throw error;
+    console.log('Iniciando inicialização dos dados...');
+    
+    // Just load existing data without generating new PIN or ID
+    const existingData = await getScreenData();
+    if (existingData?.pin && existingData?.screenId) {
+        console.log('Usando dados existentes:', existingData);
+        screenData = existingData;
+    } else {
+        // If no data, do nothing
+        console.log('Nenhum dado encontrado. Aguardando registro via master...');
+        screenData = null;
     }
+
+    isInitialized = true;
+    return screenData;
 }
 
 // Inicialização do app

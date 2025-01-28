@@ -41,39 +41,15 @@ const ScreenManager = {
         if (this.initialized) return this.data;
 
         try {
-            // Try to find existing screen in database first
-            const existingScreen = await Screen.findOne({ type: 'slave_screen' });
-
-            if (existingScreen) {
-                console.log('🔄 Recuperando dados existentes do banco:', existingScreen);
-                this.data = {
-                    pin: existingScreen.pin,
-                    screenId: existingScreen.id,
-                    registered: existingScreen.registered,
-                    content: existingScreen.content,
-                    lastUpdate: existingScreen.lastUpdate,
-                    masterUrl: existingScreen.masterUrl
-                };
-            } else {
-                // Generate new data if none exists
-                console.log('🔄 Gerando novos dados...');
-                this.data = {
-                    pin: generateRandomString(4).toUpperCase(),
-                    screenId: generateRandomString(8),
-                    registered: false,
-                    content: null,
-                    lastUpdate: Date.now(),
-                    masterUrl: null
-                };
-
-                // Save new screen to database
-                await Screen.create({
-                    id: this.data.screenId,
-                    pin: this.data.pin,
-                    type: 'slave_screen',
-                    registered: false
-                });
-            }
+            console.log('🔄 Gerando dados da tela...');
+            this.data = {
+                pin: generateRandomString(4).toUpperCase(),
+                screenId: generateRandomString(8),
+                registered: false,
+                content: null,
+                lastUpdate: Date.now(),
+                masterUrl: null
+            };
 
             this.initialized = true;
             console.log('✅ Dados da tela:', this.data);
@@ -82,6 +58,15 @@ const ScreenManager = {
             console.error('❌ Erro ao inicializar dados:', error);
             throw error;
         }
+    },
+
+    // Only update local data when confirmed by master
+    async updateRegistrationStatus(registered, masterUrl) {
+        if (!this.data) return;
+        this.data.registered = registered;
+        this.data.masterUrl = masterUrl;
+        this.data.lastUpdate = Date.now();
+        console.log('🔄 Status atualizado:', this.data);
     },
 
     async getData() {

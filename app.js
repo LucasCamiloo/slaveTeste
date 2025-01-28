@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import connectDB from './config/database.js';
 import config from './config/config.js';
+import fs from 'fs';
 // Only import what we need
 import { Screen, Product, File } from './models/index.js';
 
@@ -35,26 +36,58 @@ function generateRandomString(length) {
 const ScreenManager = {
     data: null,
     initialized: false,
+    storageKey: 'screenData',
 
     initialize() {
         if (this.initialized) return this.data;
 
-        console.log('🔄 Gerando novos dados de tela...');
-        const pin = generateRandomString(4).toUpperCase();
-        const screenId = generateRandomString(8);
-        
-        this.data = {
-            pin,
-            screenId,
-            registered: false,
-            content: null,
-            lastUpdate: Date.now(),
-            masterUrl: null
-        };
+        // Tentar recuperar dados salvos
+        try {
+            const savedData = fs.existsSync('./screenData.json') 
+                ? JSON.parse(fs.readFileSync('./screenData.json', 'utf8'))
+                : null;
+
+            if (savedData && savedData.pin && savedData.screenId) {
+                console.log('🔄 Recuperando dados salvos da tela...');
+                this.data = savedData;
+            } else {
+                console.log('🔄 Gerando novos dados de tela...');
+                this.data = {
+                    pin: generateRandomString(4).toUpperCase(),
+                    screenId: generateRandomString(8),
+                    registered: false,
+                    content: null,
+                    lastUpdate: Date.now(),
+                    masterUrl: null
+                };
+                // Salvar os novos dados
+                this.persistData();
+            }
+        } catch (error) {
+            console.error('Erro ao inicializar dados:', error);
+            this.data = {
+                pin: generateRandomString(4).toUpperCase(),
+                screenId: generateRandomString(8),
+                registered: false,
+                content: null,
+                lastUpdate: Date.now(),
+                masterUrl: null
+            };
+            this.persistData();
+        }
 
         this.initialized = true;
-        console.log('✅ Dados da tela gerados:', this.data);
+        console.log('✅ Dados da tela:', this.data);
         return this.data;
+    },
+
+    persistData() {
+        try {
+            fs.writeFileSync('./screenData.json', JSON.stringify(this.data), 'utf8');
+            console.log('💾 Dados persistidos com sucesso');
+        } catch (error) {
+            console.error('Erro ao persistir dados:', error);
+        }
     },
 
     getData() {
@@ -68,6 +101,8 @@ const ScreenManager = {
         if (!this.data) return;
         this.data.registered = registered;
         this.data.masterUrl = masterUrl;
+        this.data.lastUpdate = Date.now();
+        this.persistData();
         console.log('🔄 Status de registro atualizado:', this.data);
     },
 
@@ -75,6 +110,7 @@ const ScreenManager = {
         if (!this.data) return;
         this.data.content = content;
         this.data.lastUpdate = Date.now();
+        this.persistData();
         console.log('🔄 Conteúdo atualizado');
     }
 };

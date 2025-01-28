@@ -46,44 +46,54 @@ function generateDeviceId() {
 }
 
 // Remove any code that tries to register automatically if no pin or screenId is found
+// Adicionar logs no initialize do frontend
 async function initialize() {
+    console.log('=== Frontend Initialize START ===');
     try {
         const screenData = await getScreenData();
-        console.log('Dados da tela recebidos:', screenData);
+        console.log('📱 Dados recebidos do servidor:', screenData);
 
-        // If screenData is null or missing keys, just show a warning and avoid re-initializing
         if (!screenData || !screenData.pin || !screenData.screenId) {
-            console.warn('Nenhum PIN/ID encontrado - aguardando registro via master...');
+            console.error('❌ Dados inválidos:', screenData);
+            showConnectionError();
             return;
         }
 
         cachedScreenData = screenData;
         lastScreenDataUpdate = Date.now();
+        console.log('💾 Dados em cache atualizados:', cachedScreenData);
 
         if (screenData.registered && screenData.masterUrl) {
+            console.log('✅ Tela registrada, iniciando apresentação');
             showPresentationSection();
             startPresentation();
         } else {
+            console.log('ℹ️ Tela não registrada, mostrando tela de registro');
             showRegistrationSection(screenData);
         }
 
-        // Start SSE, but do NOT trigger any auto-registration
+        console.log('🔄 Iniciando SSE...');
         initSSE();
     } catch (error) {
-        console.error('Erro de inicialização:', error);
+        console.error('❌ ERRO na inicialização:', error);
         showConnectionError();
     }
 }
 
 // Modificar o checkConnectionStatus para não buscar novos dados
+// Modificar checkConnectionStatus para ter mais logs
 async function checkConnectionStatus() {
+    console.log('=== Check Connection Status ===');
     try {
         const response = await fetch('/connection-status');
         const data = await response.json();
+        console.log('📡 Status atual:', data);
+        
         updateConnectionStatus(data);
 
         // Apenas atualizar a interface se o status de registro mudar
         if (!data.registered && !currentContent) {
+            console.log('ℹ️ Tela não registrada, atualizando interface');
             document.getElementById('slideContent').innerHTML = '';
             document.getElementById('registrationSection').classList.remove('hidden');
             document.getElementById('presentationSection').classList.remove('visible');

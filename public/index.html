@@ -415,7 +415,8 @@
             MAX_RECONNECT_ATTEMPTS: 5,
             RECONNECT_DELAY: 3000,
             isTransitioning: false,
-            slideTimeout: null
+            slideTimeout: null,
+            registered: false
         };
 
         // Funções auxiliares
@@ -482,6 +483,55 @@
             }
         }
 
+        function initSSE() {
+            console.log('🔄 Iniciando SSE...');
+            if (appState.eventSource) {
+                console.log('Fechando conexão SSE existente');
+                appState.eventSource.close();
+            }
+
+            try {
+                appState.eventSource = new EventSource('/events');
+
+                appState.eventSource.onopen = () => {
+                    console.log('✅ SSE conectado');
+                    appState.reconnectAttempts = 0;
+                };
+
+                appState.eventSource.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        console.log('📨 Mensagem SSE:', data);
+                        
+                        if (data.registered) {
+                            appState.registered = true;
+                            showPresentationSection();
+                            startPresentation();
+                        }
+                    } catch (error) {
+                        console.error('❌ Erro ao processar mensagem SSE:', error);
+                    }
+                };
+
+                appState.eventSource.onerror = (error) => {
+                    console.error('❌ Erro SSE:', error);
+                    appState.eventSource.close();
+                    
+                    if (appState.reconnectAttempts < appState.MAX_RECONNECT_ATTEMPTS) {
+                        appState.reconnectAttempts++;
+                        const delay = appState.RECONNECT_DELAY * Math.pow(2, appState.reconnectAttempts);
+                        console.log(`🔄 Reconectando em ${delay}ms (${appState.reconnectAttempts}/${appState.MAX_RECONNECT_ATTEMPTS})`);
+                        setTimeout(initSSE, delay);
+                    } else {
+                        console.error('❌ Máximo de tentativas atingido');
+                        showConnectionError();
+                    }
+                };
+            } catch (error) {
+                console.error('❌ Erro ao iniciar SSE:', error);
+            }
+        }
+
         // Função de inicialização principal
         async function initialize() {
             console.log('=== Inicializando Frontend ===');
@@ -489,7 +539,20 @@
                 const screenData = await getScreenData();
                 console.log('📱 Estado inicial:', screenData);
 
-                if (screenData.registered) {
+                if (!screenData || !screenData.pin || !screenData.screenId) {
+                    console.error('❌ Dados inválidos:', screenData);
+                    showConnectionError();
+                    return;
+                }
+
+                // Verificar status de registro
+                const statusResponse = await fetch('/connection-status');
+                const statusData = await statusResponse.json();
+                console.log('📡 Status inicial:', statusData);
+
+                appState.registered = statusData.registered;
+
+                if (statusData.registered) {
                     console.log('✅ Tela registrada, iniciando apresentação');
                     showPresentationSection();
                     startPresentation();
@@ -498,9 +561,38 @@
                     showRegistrationSection(screenData);
                 }
 
+                // Iniciar SSE após verificar status
                 initSSE();
+                
+                // Verificar status periodicamente
+                setInterval(checkConnectionStatus, 5000);
             } catch (error) {
                 console.error('❌ Erro na inicialização:', error);
+                showConnectionError();
+            }
+        }
+
+        // Melhorar verificação de status
+        async function checkConnectionStatus() {
+            try {
+                const response = await fetch('/connection-status');
+                const data = await response.json();
+                console.log('📡 Verificando status:', data);
+                
+                if (data.registered !== appState.registered) {
+                    appState.registered = data.registered;
+                    if (data.registered) {
+                        showPresentationSection();
+                        startPresentation();
+                    } else {
+                        const screenData = await getScreenData();
+                        showRegistrationSection(screenData);
+                    }
+                }
+                
+                updateConnectionStatus(data);
+            } catch (error) {
+                console.error('❌ Erro ao verificar status:', error);
                 showConnectionError();
             }
         }

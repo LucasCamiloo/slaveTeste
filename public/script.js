@@ -45,27 +45,21 @@ function generateDeviceId() {
     return newId;
 }
 
-// Modificar initialize para ser mais independente
+// Ensure PIN and ID are not changed on SSE timeouts by relying on server-side initialization
 async function initialize() {
     try {
-        // Buscar dados locais da tela
-        const screenDataResponse = await fetch('/screen-data');
-        const screenData = await screenDataResponse.json();
-        
+        const screenData = await getScreenData();
         console.log('Dados da tela recebidos:', screenData);
 
-        // Validar dados essenciais
         if (!screenData || !screenData.pin || !screenData.screenId) {
             console.error('Dados da tela inválidos ou incompletos:', screenData);
             showConnectionError();
             return;
         }
 
-        // Atualizar cache local
         cachedScreenData = screenData;
         lastScreenDataUpdate = Date.now();
 
-        // Verificar status de registro
         if (screenData.registered && screenData.masterUrl) {
             showPresentationSection();
             startPresentation();
@@ -122,9 +116,8 @@ function showRegistrationSection(data) {
     screenIdSpan.textContent = data.screenId;
 }
 
-// Update handleRegistrationUpdate to maintain connection
+// Modify handleRegistrationUpdate to avoid changing PIN/ID
 async function handleRegistrationUpdate(data) {
-    // Only update if it's for this screen
     if (cachedScreenData && data.targetScreen && data.targetScreen !== cachedScreenData.screenId) {
         console.log('Ignorando atualização destinada a outra tela');
         return;
@@ -164,6 +157,7 @@ function handleListContent(container) {
             // Usar apenas URLs do GridFS
             if (!imageUrl.startsWith('/files/')) {
                 console.error('URL inválida:', imageUrl);
+                console.error('URL inválida:', imageUrl);
                 imageUrl = '/files/default-product';
             }
             if (!imageUrl.startsWith('http')) {
@@ -189,7 +183,8 @@ function handleListContent(container) {
     rotateListItem();
 }
 
-function initSSE() {
+// Modify SSE initialization to limit reconnection attempts
+async function initSSE() {
     if (eventSource) {
         console.log('Fechando conexão SSE existente');
         eventSource.close();
@@ -201,8 +196,6 @@ function initSSE() {
     eventSource.onopen = function() {
         console.log('SSE: Conexão estabelecida');
         reconnectAttempts = 0;
-        
-        // Não reinicializar dados aqui, apenas verificar status
         checkConnectionStatus();
     };
 
@@ -227,8 +220,9 @@ function initSSE() {
         
         if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
             reconnectAttempts++;
-            console.log(`SSE: Tentativa de reconexão ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
-            setTimeout(initSSE, RECONNECT_DELAY * reconnectAttempts);
+            const delay = RECONNECT_DELAY * Math.pow(2, reconnectAttempts); // Exponential backoff
+            console.log(`SSE: Tentativa de reconexão ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} em ${delay}ms`);
+            setTimeout(initSSE, delay);
         } else {
             console.error('SSE: Máximo de tentativas de reconexão atingido');
             showConnectionError();

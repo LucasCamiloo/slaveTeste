@@ -77,6 +77,48 @@ const ScreenManager = {
     }
 };
 
+// Update or add screen data persistence
+let screenData = null;
+
+// Add function to load or generate screen data
+function getOrCreateScreenData() {
+    if (screenData) return screenData;
+    
+    // Generate new screen data
+    screenData = {
+        screenId: generateRandomString(8),
+        pin: generateRandomString(4).toUpperCase(),
+        registered: false,
+        content: null,
+        lastUpdate: Date.now()
+    };
+
+    // Save to file for persistence
+    try {
+        fs.writeFileSync('screenData.json', JSON.stringify(screenData));
+    } catch (error) {
+        console.error('Error saving screen data:', error);
+    }
+    
+    return screenData;
+}
+
+// Add function to load existing screen data
+function loadScreenData() {
+    try {
+        if (fs.existsSync('screenData.json')) {
+            const data = JSON.parse(fs.readFileSync('screenData.json'));
+            if (data && data.screenId && data.pin) {
+                screenData = data;
+                return data;
+            }
+        }
+    } catch (error) {
+        console.error('Error loading screen data:', error);
+    }
+    return getOrCreateScreenData();
+}
+
 // Rotas simplificadas que não dependem do banco
 async function startServer() {
     try {
@@ -98,6 +140,12 @@ async function startServer() {
                 console.error('❌ Erro ao obter dados da tela:', error);
                 res.status(500).json({ error: 'Internal server error' });
             }
+        });
+
+        // Update the screen-data endpoint
+        app.get('/screen-data', (req, res) => {
+            const data = loadScreenData();
+            res.json(data);
         });
 
         // Connection status endpoint

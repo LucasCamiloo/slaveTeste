@@ -9,29 +9,16 @@ let reconnectAttempts = 0;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const RECONNECT_DELAY = 3000;
 
-// Add cache for screen data
-let cachedScreenData = null;
-
-// Adicionar um timestamp para controle de cache
-let lastScreenDataUpdate = 0;
-const CACHE_DURATION = 300000; // 5 minutos
-
+// Remove cache variables since we're using server-side state management
 async function getScreenData() {
-    const now = Date.now();
-    
-    // Usar cache se disponível e dentro do período de validade
-    if (cachedScreenData && (now - lastScreenDataUpdate) < CACHE_DURATION) {
-        return cachedScreenData;
-    }
-
     try {
         const response = await fetch('/screen-data');
-        cachedScreenData = await response.json();
-        lastScreenDataUpdate = now;
-        return cachedScreenData;
+        const data = await response.json();
+        console.log('📱 Dados recebidos:', data);
+        return data;
     } catch (error) {
-        console.error('Erro ao buscar dados da tela:', error);
-        return cachedScreenData; // Retornar cache mesmo expirado em caso de erro
+        console.error('❌ Erro ao buscar dados:', error);
+        throw error;
     }
 }
 
@@ -48,58 +35,37 @@ function generateDeviceId() {
 // Remove any code that tries to register automatically if no pin or screenId is found
 // Adicionar logs no initialize do frontend
 async function initialize() {
-    console.log('=== Frontend Initialize START ===');
+    console.log('=== Inicializando Frontend ===');
     try {
         const screenData = await getScreenData();
-        console.log('📱 Dados recebidos do servidor:', screenData);
+        console.log('📱 Estado inicial:', screenData);
 
-        if (!screenData || !screenData.pin || !screenData.screenId) {
-            console.error('❌ Dados inválidos:', screenData);
-            showConnectionError();
-            return;
-        }
-
-        cachedScreenData = screenData;
-        lastScreenDataUpdate = Date.now();
-        console.log('💾 Dados em cache atualizados:', cachedScreenData);
-
-        if (screenData.registered && screenData.masterUrl) {
+        if (screenData.registered) {
             console.log('✅ Tela registrada, iniciando apresentação');
             showPresentationSection();
             startPresentation();
         } else {
-            console.log('ℹ️ Tela não registrada, mostrando tela de registro');
+            console.log('ℹ️ Tela não registrada, mostrando registro');
             showRegistrationSection(screenData);
         }
 
-        console.log('🔄 Iniciando SSE...');
         initSSE();
     } catch (error) {
-        console.error('❌ ERRO na inicialização:', error);
+        console.error('❌ Erro na inicialização:', error);
         showConnectionError();
     }
 }
 
-// Modificar o checkConnectionStatus para não buscar novos dados
-// Modificar checkConnectionStatus para ter mais logs
+// Simplificar verificação de status
 async function checkConnectionStatus() {
-    console.log('=== Check Connection Status ===');
+    console.log('=== Verificando Status ===');
     try {
         const response = await fetch('/connection-status');
         const data = await response.json();
-        console.log('📡 Status atual:', data);
-        
+        console.log('📡 Status:', data);
         updateConnectionStatus(data);
-
-        // Apenas atualizar a interface se o status de registro mudar
-        if (!data.registered && !currentContent) {
-            console.log('ℹ️ Tela não registrada, atualizando interface');
-            document.getElementById('slideContent').innerHTML = '';
-            document.getElementById('registrationSection').classList.remove('hidden');
-            document.getElementById('presentationSection').classList.remove('visible');
-        }
     } catch (error) {
-        console.error('Error checking status:', error);
+        console.error('❌ Erro ao verificar status:', error);
         showConnectionError();
     }
 }
@@ -194,48 +160,47 @@ function handleListContent(container) {
     rotateListItem();
 }
 
-// Modify SSE initialization to limit reconnection attempts
-async function initSSE() {
+// Melhorar manipulação de SSE
+function initSSE() {
     if (eventSource) {
-        console.log('Fechando conexão SSE existente');
+        console.log('🔄 Fechando SSE existente');
         eventSource.close();
     }
 
-    console.log('Iniciando nova conexão SSE');
+    console.log('🔄 Iniciando nova conexão SSE');
     eventSource = new EventSource('/events');
 
-    eventSource.onopen = function() {
-        console.log('SSE: Conexão estabelecida');
+    eventSource.onopen = () => {
+        console.log('✅ SSE conectado');
         reconnectAttempts = 0;
-        checkConnectionStatus();
     };
 
-    eventSource.onmessage = function(event) {
+    eventSource.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
-            console.log('SSE: Mensagem recebida:', data);
-
+            console.log('📨 Mensagem SSE:', data);
+            
             if (data.type === 'connected') {
                 handleConnectionStatus(data);
             } else if (data.type === 'screen_update') {
                 handleRegistrationUpdate(data);
             }
         } catch (error) {
-            console.error('SSE: Erro ao processar mensagem:', error);
+            console.error('❌ Erro ao processar mensagem SSE:', error);
         }
     };
 
-    eventSource.onerror = function(error) {
-        console.error('SSE: Erro na conexão:', error);
+    eventSource.onerror = (error) => {
+        console.error('❌ Erro SSE:', error);
         eventSource.close();
         
         if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
             reconnectAttempts++;
-            const delay = RECONNECT_DELAY * Math.pow(2, reconnectAttempts); // Exponential backoff
-            console.log(`SSE: Tentativa de reconexão ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} em ${delay}ms`);
+            const delay = RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
+            console.log(`🔄 Reconectando em ${delay}ms (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
             setTimeout(initSSE, delay);
         } else {
-            console.error('SSE: Máximo de tentativas de reconexão atingido');
+            console.error('❌ Máximo de tentativas atingido');
             showConnectionError();
         }
     };

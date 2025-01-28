@@ -45,10 +45,10 @@ function generateDeviceId() {
     return newId;
 }
 
-// Modificar initialize para garantir dados válidos
+// Modificar initialize para ser mais independente
 async function initialize() {
     try {
-        // Buscar dados da tela
+        // Buscar dados locais da tela
         const screenDataResponse = await fetch('/screen-data');
         const screenData = await screenDataResponse.json();
         
@@ -61,23 +61,19 @@ async function initialize() {
             return;
         }
 
-        // Atualizar cache
+        // Atualizar cache local
         cachedScreenData = screenData;
         lastScreenDataUpdate = Date.now();
 
         // Verificar status de registro
-        const statusResponse = await fetch('/connection-status');
-        const statusData = await statusResponse.json();
-
-        if (statusData.registered) {
+        if (screenData.registered && screenData.masterUrl) {
             showPresentationSection();
             startPresentation();
         } else {
-            showRegistrationSection(cachedScreenData);
+            showRegistrationSection(screenData);
         }
 
         initSSE();
-        setInterval(checkConnectionStatus, 30000);
     } catch (error) {
         console.error('Erro de inicialização:', error);
         showConnectionError();

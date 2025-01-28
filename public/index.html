@@ -405,7 +405,7 @@
         const MASTER_URL = 'https://master-teste.vercel.app';
         const SLAVE_URL = 'https://slave-teste.vercel.app';
         
-        // Estado da aplicação
+        // Estado da aplicação com persistência
         const appState = {
             currentContent: null,
             currentIndex: 0,
@@ -416,18 +416,29 @@
             RECONNECT_DELAY: 3000,
             isTransitioning: false,
             slideTimeout: null,
-            registered: false
+            screenData: null
         };
+
+        // Cache do status da tela
+        async function cacheScreenData(data) {
+            appState.screenData = data;
+            console.log('🔄 Cache atualizado:', appState.screenData);
+        }
 
         // Funções auxiliares
         async function getScreenData() {
             try {
+                if (appState.screenData) {
+                    return appState.screenData;
+                }
+
                 const response = await fetch('/screen-data');
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 const data = await response.json();
                 console.log('📱 Dados recebidos:', data);
+                await cacheScreenData(data);
                 return data;
             } catch (error) {
                 console.error('❌ Erro ao buscar dados:', error);
@@ -485,6 +496,11 @@
 
         // Função para iniciar SSE com o MASTER, não com o slave
         function initSSE() {
+            if (!appState.screenData) {
+                console.error('❌ Dados da tela não disponíveis para SSE');
+                return;
+            }
+
             console.log('🔄 Iniciando SSE com o master...');
             if (appState.eventSource) {
                 console.log('Fechando conexão SSE existente');
@@ -552,19 +568,13 @@
             }
         }
 
-        // Função de inicialização principal
+        // Função de inicialização principal atualizada
         async function initialize() {
             console.log('=== Inicializando Frontend ===');
             try {
-                // Buscar dados locais primeiro
+                // Buscar dados iniciais e fazer cache
                 const screenData = await getScreenData();
                 console.log('📱 Estado inicial:', screenData);
-
-                if (!screenData || !screenData.pin || !screenData.screenId) {
-                    console.error('❌ Dados inválidos:', screenData);
-                    showConnectionError();
-                    return;
-                }
 
                 // Verificar status de registro
                 const statusResponse = await fetch('/connection-status');
@@ -572,7 +582,7 @@
                 console.log('📡 Status inicial:', statusData);
 
                 // Atualizar interface baseado no status
-                if (statusData.registered) {
+                if (statusData.registered && statusData.masterUrl) {
                     console.log('✅ Tela registrada, iniciando apresentação');
                     showPresentationSection();
                     startPresentation();
@@ -581,12 +591,11 @@
                     showRegistrationSection(screenData);
                 }
 
-                // Iniciar SSE com o master
-                console.log('🔄 Iniciando conexão com o master...');
+                // Iniciar SSE
                 initSSE();
 
-                // Verificar status periodicamente
-                setInterval(checkConnectionStatus, 5000);
+                // Verificar status periodicamente (reduzir frequência)
+                setInterval(checkConnectionStatus, 10000); // A cada 10 segundos
             } catch (error) {
                 console.error('❌ Erro na inicialização:', error);
                 showConnectionError();
@@ -596,25 +605,27 @@
         // Melhorar verificação de status
         async function checkConnectionStatus() {
             try {
+                const screenData = await getScreenData();
                 const response = await fetch('/connection-status');
                 const data = await response.json();
-                console.log('📡 Verificando status:', data);
                 
-                if (data.registered !== appState.registered) {
-                    appState.registered = data.registered;
-                    if (data.registered) {
-                        showPresentationSection();
-                        startPresentation();
-                    } else {
-                        const screenData = await getScreenData();
-                        showRegistrationSection(screenData);
-                    }
+                // Verificar se os dados correspondem à tela atual
+                if (data.screenId !== screenData.screenId) {
+                    console.warn('❌ ID da tela não corresponde:', {
+                        cached: screenData.screenId,
+                        received: data.screenId
+                    });
+                    return;
                 }
-                
+
+                console.log('📡 Status:', data);
                 updateConnectionStatus(data);
+
+                if (data.registered && data.masterUrl) {
+                    showPresentationSection();
+                }
             } catch (error) {
                 console.error('❌ Erro ao verificar status:', error);
-                showConnectionError();
             }
         }
 

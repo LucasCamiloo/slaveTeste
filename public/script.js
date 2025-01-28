@@ -88,13 +88,8 @@ async function initialize() {
 
         // Ensure we have valid screen data
         if (!screenData || !screenData.screenId) {
-            console.error('❌ Invalid screen data');
-            showConnectionError();
-            return;
+            throw new Error('Dados da tela inválidos');
         }
-
-        // Store in localStorage for persistence
-        localStorage.setItem('screenData', JSON.stringify(screenData));
 
         if (screenData.registered) {
             console.log('✅ Tela registrada, iniciando apresentação');
@@ -353,6 +348,106 @@ async function registerScreen() {
         console.error('❌ Erro no registro:', error);
         showConnectionError();
     }
+}
+
+// Add presentation management functions
+function startPresentation() {
+    console.log('🎬 Iniciando apresentação');
+    if (currentContent) {
+        showSlide();
+    } else {
+        console.log('ℹ️ Nenhum conteúdo para apresentar');
+        showWaitingScreen();
+    }
+}
+
+function showWaitingScreen() {
+    const slideContent = document.getElementById('slideContent');
+    if (slideContent) {
+        slideContent.innerHTML = `
+            <div style="color: white; text-align: center; padding: 20px;">
+                <h2>Aguardando conteúdo...</h2>
+                <p>A tela está conectada e pronta para exibir conteúdo.</p>
+            </div>
+        `;
+    }
+}
+
+function showSlide() {
+    if (!currentContent || currentContent.length === 0) {
+        showWaitingScreen();
+        return;
+    }
+
+    const slideContent = document.getElementById('slideContent');
+    if (!slideContent) return;
+
+    // Clear any existing content
+    slideContent.innerHTML = '';
+
+    // Show current slide
+    const content = currentContent[currentIndex];
+    slideContent.innerHTML = content;
+
+    // Handle any special content (like lists or videos)
+    handleSpecialContent(slideContent);
+
+    // Schedule next slide
+    if (currentContent.length > 1) {
+        setTimeout(() => {
+            currentIndex = (currentIndex + 1) % currentContent.length;
+            showSlide();
+        }, 10000); // 10 seconds per slide
+    }
+}
+
+function handleSpecialContent(container) {
+    // Handle list content if present
+    if (container.querySelector('.product-list-item')) {
+        handleListContent(container);
+    }
+
+    // Handle video content if present
+    const video = container.querySelector('video');
+    if (video) {
+        handleVideoContent(video);
+    }
+}
+
+function handleVideoContent(video) {
+    video.play().catch(error => {
+        console.error('Error playing video:', error);
+    });
+
+    video.onended = () => {
+        currentIndex = (currentIndex + 1) % currentContent.length;
+        showSlide();
+    };
+}
+
+// Update error handling
+function showConnectionError() {
+    const statusElement = document.getElementById('connectionStatus');
+    if (statusElement) {
+        statusElement.textContent = 'Erro de conexão - Tentando reconectar...';
+        statusElement.classList.add('disconnected');
+        statusElement.classList.remove('connected', 'hidden');
+    }
+
+    // Show registration section after error
+    getScreenData().then(data => {
+        if (data) {
+            showRegistrationSection(data);
+        }
+    }).catch(error => {
+        console.error('Erro ao recuperar dados após erro de conexão:', error);
+    });
+
+    // Try to reconnect after a delay
+    setTimeout(() => {
+        console.log('🔄 Tentando reconectar...');
+        initialize();
+    }, 5000);
 }
 
 // ...rest of existing code...

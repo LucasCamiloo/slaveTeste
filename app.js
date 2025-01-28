@@ -333,57 +333,41 @@ async function startServer() {
         app.post('/content', async (req, res) => {
             try {
                 const { content, screenId } = req.body;
-                console.log('📝 Recebendo conteúdo:', { screenId, contentLength: content?.length });
 
-                const data = await ScreenManager.getData();
-                
-                // Verify screen ID
-                if (screenId !== data.screenId) {
-                    console.log('❌ ID da tela não corresponde:', { 
-                        expected: data.screenId, 
-                        received: screenId 
-                    });
-                    return res.status(400).json({
-                        success: false,
-                        message: 'Invalid screen ID'
+                // Garantir que o conteúdo seja apenas para esta tela específica
+                if (screenId !== screenData.screenId) {
+                    console.log(`Ignorando conteúdo destinado à tela ${screenId} (esta tela é ${screenData.screenId})`);
+                    return res.json({ 
+                        success: true, 
+                        message: 'Content ignored - wrong screen' 
                     });
                 }
 
-                if (!content) {
-                    console.log('❌ Conteúdo vazio recebido');
-                    return res.status(400).json({
-                        success: false,
-                        message: 'Content is required'
-                    });
+                if (content) {
+                    // Atualizar conteúdo apenas se for para esta tela
+                    screenData.content = content;
+                    screenData.lastUpdate = Date.now();
+
+                    // Atualizar banco de dados
+                    await Screen.findOneAndUpdate(
+                        { id: screenData.screenId },
+                        { 
+                            content: content,
+                            lastUpdate: Date.now()
+                        },
+                        { new: true, upsert: true }
+                    );
+
+                    console.log(`Conteúdo atualizado para tela ${screenData.screenId}`);
                 }
-
-                // Update content in memory and file
-                data.content = Array.isArray(content) ? content : [content];
-                data.lastUpdate = Date.now();
-
-                // Save to file
-                try {
-                    fs.writeFileSync(SCREEN_DATA_FILE, JSON.stringify(data, null, 2));
-                    console.log('✅ Conteúdo salvo com sucesso');
-                } catch (err) {
-                    console.error('❌ Erro ao salvar conteúdo:', err);
-                }
-
-                // Notify connected clients
-                const updateEvent = {
-                    type: 'content_update',
-                    content: data.content,
-                    timestamp: data.lastUpdate
-                };
-
-                notifyClients(updateEvent);
                 
                 res.json({ success: true });
             } catch (error) {
-                console.error('❌ Erro ao atualizar conteúdo:', error);
+                console.error('Error updating content:', error);
                 res.status(500).json({ 
                     success: false, 
-                    message: error.message 
+                    message: 'Error updating content',
+                    error: error.message
                 });
             }
         });

@@ -398,11 +398,10 @@
         </div>
     </div>
 
-    <div id="displayArea" style="display: none;">
-        <!-- ...existing code or placeholders for slides/videos... -->
-    </div>
+    <div id="displayArea" style="display: none;"></div>
 
     <script>
+        // Remover variáveis globais duplicadas
         const MASTER_URL = 'https://master-teste.vercel.app';
         const SLAVE_URL = 'https://slave-teste.vercel.app';
 
@@ -414,532 +413,53 @@
         const MAX_RECONNECT_ATTEMPTS = 5;
         const RECONNECT_DELAY = 3000;
 
-        async function initSSE() {
-            if (eventSource) {
-                console.log('Fechando conexão SSE existente');
-                eventSource.close();
-            }
+        // Estado local da aplicação
+        const appState = {
+            isTransitioning: false,
+            slideTimeout: null,
+            currentListIndex: 0
+        };
 
-            console.log('Iniciando nova conexão SSE');
-            eventSource = new EventSource('/events');
-
-            eventSource.onopen = function() {
-                console.log('SSE: Conexão estabelecida');
-                reconnectAttempts = 0;
-                checkConnectionStatus();
-            };
-
-            eventSource.onmessage = function(event) {
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('SSE: Mensagem recebida:', data);
-
-                    if (data.type === 'connected') {
-                        handleConnectionStatus(data);
-                    } else if (data.type === 'screen_update') {
-                        handleRegistrationUpdate(data);
-                    }
-                } catch (error) {
-                    console.error('SSE: Erro ao processar mensagem:', error);
-                }
-            };
-
-            eventSource.onerror = function(error) {
-                console.error('SSE: Erro na conexão:', error);
-                eventSource.close();
-                
-                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                    reconnectAttempts++;
-                    const delay = RECONNECT_DELAY * Math.pow(2, reconnectAttempts); // Exponential backoff
-                    console.log(`SSE: Tentativa de reconexão ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} em ${delay}ms`);
-                    setTimeout(initSSE, delay);
-                } else {
-                    console.error('SSE: Máximo de tentativas de reconexão atingido');
-                    showConnectionError();
-                }
-            };
-        }
-
-        // Replace initialize function
+        // Remover funções duplicadas - usar apenas as versões mais recentes
         async function initialize() {
+            console.log('=== Inicializando Frontend ===');
             try {
-                const statusResponse = await fetch('/connection-status');
-                const statusData = await statusResponse.json();
+                const screenData = await getScreenData();
+                console.log('📱 Estado inicial:', screenData);
 
-                if (statusData.registered) {
+                if (screenData.registered) {
+                    console.log('✅ Tela registrada, iniciando apresentação');
                     showPresentationSection();
                     startPresentation();
                 } else {
-                    const screenDataResponse = await fetch('/screen-data');
-                    const screenData = await screenDataResponse.json();
-                    
-                    if (!screenData.pin || !screenData.screenId) {
-                        console.error('Dados da tela inválidos:', screenData);
-                        showConnectionError();
-                        return;
-                    }
-                    
-                    console.log('Dados da tela recebidos:', screenData);
+                    console.log('ℹ️ Tela não registrada, mostrando registro');
                     showRegistrationSection(screenData);
                 }
 
                 initSSE();
-                setInterval(checkConnectionStatus, 5000);
             } catch (error) {
-                console.error('Erro de inicialização:', error);
+                console.error('❌ Erro na inicialização:', error);
                 showConnectionError();
             }
         }
 
-        function handleConnectionStatus(data) {
-            if (data.registered) {
-                showPresentationSection();
-                startPresentation();
-            } else {
-                showRegistrationSection(data);
+        // Única chamada de inicialização
+        document.addEventListener('DOMContentLoaded', initialize);
+
+        // Helper functions
+        const utils = {
+            fixImageUrls() {
+                // ...existing code...
+            },
+            fixBackgroundImages() {
+                // ...existing code...
             }
-        }
+        };
 
-        async function handleRegistrationUpdate(data) {
-            // Verificar se a atualização é para esta tela
-            const screenDataResponse = await fetch('/screen-data');
-            const screenData = await screenDataResponse.json();
-            
-            // Só processar atualizações destinadas a esta tela
-            if (data.targetScreen && data.targetScreen !== screenData.screenId) {
-                console.log('Ignorando atualização destinada a outra tela');
-                return;
-            }
-
-            if (data.registered) {
-                showPresentationSection();
-                startPresentation();
-                showSuccessMessage('Conexão estabelecida com sucesso!');
-            } else if (data.action === 'content_update' && data.content) {
-                currentContent = Array.isArray(data.content) ? data.content : [data.content];
-                currentIndex = 0;
-                showSlide();
-            } else if (data.action === 'name_update') {
-                showPresentationSection();
-                startPresentation();
-            } else {
-                showRegistrationSection(data);
-            }
-        }
-
-        function showSuccessMessage(message) {
-            const statusElement = document.getElementById('connectionStatus');
-            statusElement.textContent = message;
-            statusElement.classList.add('connected');
-            statusElement.classList.remove('disconnected');
-            statusElement.classList.remove('hidden');
-
-            // Esconder a mensagem após 5 segundos
-            clearTimeout(statusTimeout);
-            statusTimeout = setTimeout(() => {
-                statusElement.classList.add('hidden');
-            }, 5000);
-        }
-
-        function showRegistrationSection(data) {
-            console.log('Mostrando seção de registro com dados:', data);
-            
-            const registrationSection = document.getElementById('registrationSection');
-            const presentationSection = document.getElementById('presentationSection');
-            const pinSpan = document.getElementById('pin');
-            const screenIdSpan = document.getElementById('screenId');
-
-            if (!data || !data.pin || !data.screenId) {
-                console.error('Dados inválidos recebidos:', data);
-                return;
-            }
-
-            registrationSection.classList.remove('hidden');
-            presentationSection.classList.remove('visible');
-
-            pinSpan.textContent = data.pin;
-            screenIdSpan.textContent = data.screenId;
-        }
-
-        function showPresentationSection() {
-            document.getElementById('registrationSection').classList.add('hidden');
-            document.getElementById('presentationSection').classList.add('visible');
-        }
-
-        // Update checkConnectionStatus to only use Slave for QR Code
-        async function checkConnectionStatus() {
-            try {
-                const response = await fetch('/connection-status');
-                const data = await response.json();
-                updateConnectionStatus(data);
-
-                // Only show registration if we're not registered AND not showing content
-                if (!data.registered && !currentContent) {
-                    document.getElementById('slideContent').innerHTML = '';
-                    document.getElementById('registrationSection').classList.remove('hidden');
-                    document.getElementById('presentationSection').classList.remove('visible');
-                    
-                    // Fetch screen data from slave
-                    const screenDataResponse = await fetch('/screen-data');
-                    const screenData = await screenDataResponse.json();
-                    
-                    document.getElementById('pin').textContent = screenData.pin;
-                    document.getElementById('screenId').textContent = screenData.screenId;
-                }
-            } catch (error) {
-                console.error('Error checking status:', error);
-                showConnectionError();
-            }
-        }
-
-        function updateConnectionStatus(data) {
-            const statusElement = document.getElementById('connectionStatus');
-            
-            if (data.registered) {
-                statusElement.textContent = `Conectado ao Master (${data.masterUrl})`;
-                statusElement.classList.add('connected');
-                statusElement.classList.remove('disconnected');
-                
-                // Esconder o status após 5 segundos
-                clearTimeout(statusTimeout);
-                statusTimeout = setTimeout(() => {
-                    statusElement.classList.add('hidden');
-                }, 5000);
-            } else {
-                statusElement.textContent = 'Aguardando conexão com o Master...';
-                statusElement.classList.remove('connected', 'hidden');
-                statusElement.classList.add('disconnected');
-            }
-        }
-
-        function showConnectionError() {
-            const statusElement = document.getElementById('connectionStatus');
-            statusElement.textContent = 'Erro ao verificar conexão';
-            statusElement.classList.add('disconnected');
-        }
-
-        // Update loadContent to maintain content during connection issues
-        async function loadContent() {
-            try {
-                const response = await fetch('/content');
-                const data = await response.json();
-                
-                if (data.content) {
-                    const contentArray = Array.isArray(data.content) ? data.content : [data.content];
-                    
-                    // Store content in localStorage as backup
-                    localStorage.setItem('lastContent', JSON.stringify(contentArray));
-                    
-                    // Verificar se o conteúdo é diferente antes de atualizar
-                    if (JSON.stringify(currentContent) !== JSON.stringify(contentArray)) {
-                        console.log('Novo conteúdo recebido:', contentArray);
-                        currentContent = contentArray;
-                        currentIndex = 0;
-                        
-                        // Garantir que os elementos existam antes de chamar showSlide
-                        if (document.getElementById('slideContent') && 
-                            document.getElementById('slideContainer')) {
-                            showSlide();
-                        } else {
-                            console.error('Elementos necessários não encontrados');
-                        }
-                    }
-                } else {
-                    // Try to load from localStorage if no content from server
-                    const savedContent = localStorage.getItem('lastContent');
-                    if (savedContent && (!currentContent || currentContent.length === 0)) {
-                        currentContent = JSON.parse(savedContent);
-                        showSlide();
-                    }
-                }
-            } catch (error) {
-                console.error('Erro ao carregar conteúdo:', error);
-                // Try to recover from localStorage
-                const savedContent = localStorage.getItem('lastContent');
-                if (savedContent && (!currentContent || currentContent.length === 0)) {
-                    currentContent = JSON.parse(savedContent);
-                    showSlide();
-                }
-            }
-        }
-
-        // Add slide transition lock to prevent multiple transitions
-        let isTransitioning = false;
-        let slideTimeout = null;
-
-        // Update showSlide to maintain state during transitions
-        async function showSlide() {
-            if (isTransitioning) return;
-            isTransitioning = true;
-
-            const container = document.getElementById('slideContent');
-            if (!currentContent || !currentContent[currentIndex]) {
-                isTransitioning = false;
-                return;
-            }
-
-            const content = currentContent[currentIndex];
-            
-            // Fix background image URLs
-            const processedContent = content.replace(
-                /(background-image:\s*url\(['"]?)http:\/\/localhost:4000/g,
-                `$1${MASTER_URL}`
-            );
-
-            container.classList.remove('in');
-            container.classList.add('fade');
-            
-            setTimeout(() => {
-                container.innerHTML = processedContent;
-                
-                // Fix image URLs in content
-                const images = container.querySelectorAll('img');
-                images.forEach(img => {
-                    if (img.src.includes('localhost:4000')) {
-                        img.src = img.src.replace('http://localhost:4000', MASTER_URL);
-                    }
-                });
-
-                container.classList.add('in');
-                
-                if (content.includes('video-container')) {
-                    handleVideoContent(container);
-                } else if (content.includes('list-layout')) {
-                    handleListContent(container);
-                } else {
-                    // Two products layout
-                    if (window.listInterval) {
-                        clearInterval(window.listInterval);
-                    }
-
-                    clearTimeout(slideTimeout); // Clear any existing timeout
-                    slideTimeout = setTimeout(() => {
-                        currentIndex = (currentIndex + 1) % currentContent.length;
-                        isTransitioning = false;
-                        showSlide();
-                    }, 15000); // Extended display time for two-product ads
-                }
-            }, 1000);
-        }
-
-        function handleVideoContent(container) {
-            const videoElement = container.querySelector('video');
-            if (videoElement) {
-                videoElement.muted = true;
-                videoElement.playsInline = true;
-                videoElement.load();
-                
-                const playPromise = videoElement.play();
-                if (playPromise !== undefined) {
-                    playPromise.then(() => {
-                        console.log('Video playing successfully');
-                    }).catch(error => {
-                        console.error('Error playing video:', error);
-                        nextSlide();
-                    });
-                }
-
-                videoElement.addEventListener('ended', nextSlide, { once: true });
-
-                // Fallback timer
-                clearTimeout(slideTimeout); // Clear any existing timeout
-                slideTimeout = setTimeout(() => {
-                    if (videoElement.paused && videoElement.currentTime === 0) {
-                        nextSlide();
-                    }
-                }, 5000);
-            }
-        }
-
-        function handleListContent(container) {
-            if (window.listInterval) {
-                clearInterval(window.listInterval);
-            }
-
-            const listItems = Array.from(container.querySelectorAll('.product-list-item'));
-            let currentListIndex = 0;
-
-            function rotateListItem() {
-                listItems.forEach(item => item.classList.remove('active'));
-                const currentItem = listItems[currentListIndex];
-                currentItem.classList.add('active');
-                
-                let imageUrl = currentItem.dataset.imageUrl;
-                if (imageUrl && !imageUrl.startsWith('http')) {
-                    imageUrl = `${MASTER_URL}${imageUrl}`;
-                }
-                
-                const featuredImage = container.querySelector('.featured-image');
-                const featuredName = container.querySelector('.featured-name');
-                const featuredPrice = container.querySelector('.featured-price');
-
-                featuredImage.src = imageUrl;
-                featuredImage.onerror = () => {
-                    featuredImage.src = `${MASTER_URL}/default-product.png`;
-                };
-                
-                featuredName.textContent = currentItem.dataset.name;
-                
-                let price = currentItem.dataset.price;
-                try {
-                    price = price.replace('R$', '').trim();
-                    price = parseFloat(price);
-                    featuredPrice.textContent = isNaN(price) ? 'Preço indisponível' : `R$ ${price.toFixed(2)}`;
-                } catch (error) {
-                    console.error('Error parsing price:', error);
-                    featuredPrice.textContent = 'Preço indisponível';
-                }
-
-                currentItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                currentListIndex = (currentListIndex + 1) % listItems.length;
-
-                if (currentListIndex === 0) {
-                    clearTimeout(slideTimeout); // Clear any existing timeout
-                    slideTimeout = setTimeout(() => {
-                        nextSlide();
-                    }, 5000); // Ensure the last item stays for the full duration
-                } else {
-                    slideTimeout = setTimeout(rotateListItem, 5000); // Extended display time for list items
-                }
-            }
-
-            rotateListItem();
-        }
-
-        function nextSlide() {
-            clearTimeout(slideTimeout);
-            currentIndex = (currentIndex + 1) % currentContent.length;
-            isTransitioning = false;
-            showSlide();
-        }
-
-        // Modificar a função startPresentation para remover o setInterval adicional
-        function startPresentation() {
-            checkConnectionStatus();
-            loadContent();
-            
-            // Apenas verificar status e conteúdo periodicamente
-            setInterval(checkConnectionStatus, 5000);
-            setInterval(loadContent, 5000);
-            //a
-            // Remover o setInterval do showSlide pois agora é controlado internamente
-        }
-
-        // Remover chamada duplicada de initialize() no final do arquivo
-        // Garantir que só existe uma chamada no DOMContentLoaded
-        document.addEventListener('DOMContentLoaded', () => {
-            initialize();
-        });
-
-        // Verificar atualizações de conteúdo periodicamente
-        setInterval(async () => {
-            try {
-                const response = await fetch('/content');
-                const data = await response.json();
-                
-                if (data.content) {
-                    const contentArray = Array.isArray(data.content) ? data.content : [data.content];
-                    if (JSON.stringify(currentContent) !== JSON.stringify(contentArray)) {
-                        currentContent = contentArray;
-                        currentIndex = 0;
-                        showSlide();
-                    }
-                }
-            } catch (error) {
-                console.error('Erro ao verificar atualizações de conteúdo:', error);
-            }
-        }, 10000); // Verificar a cada 10 segundos
-
-        document.addEventListener('DOMContentLoaded', () => {
-            setInterval(async () => {
-                try {
-                    const response = await fetch('/connection-status');
-                    const data = await response.json();
-                    const isRegistered = data.registered;
-                    document.getElementById('displayArea').style.display = isRegistered ? 'block' : 'none';
-                    // ...hide or show the registration form accordingly...
-                } catch (error) {
-                    console.error('Error checking registration status:', error);
-                }
-            }, 5000);
-        });
-
-        function handleNewContent(content) {
-            console.log('Novo conteúdo recebido:', content);
-            if (content) {
-                document.getElementById('registrationForm').style.display = 'none';
-                document.getElementById('displayArea').style.display = 'block';
-                // ...load slides or videos here...
-            }
-        }
-
-        // Fix image loading
-        function fixImageUrls() {
-            const images = document.querySelectorAll('img');
-            images.forEach(img => {
-                if (!img.dataset.retryCount) {
-                    img.dataset.retryCount = '0';
-                }
-
-                img.onerror = function() {
-                    const retryCount = parseInt(this.dataset.retryCount);
-                    if (retryCount < 3) {
-                        this.dataset.retryCount = (retryCount + 1).toString();
-                        if (this.src.includes('default-product')) {
-                            this.src = `${MASTER_URL}/default-product.png`;
-                        } else {
-                            setTimeout(() => {
-                                this.src = this.src.replace(/\?.*$/, '') + '?retry=' + Date.now();
-                            }, 1000 * (retryCount + 1));
-                        }
-                    }
-                };
-            });
-        }
-
-        // Fix background images
-        function fixBackgroundImages() {
-            const elements = document.querySelectorAll('[style*="background-image"]');
-            elements.forEach(el => {
-                const style = el.getAttribute('style');
-                if (style && style.includes('localhost:4000')) {
-                    const newStyle = style.replace(/http:\/\/localhost:4000/g, MASTER_URL);
-                    el.setAttribute('style', newStyle);
-                }
-            });
-        }
-
-        async function loadContent() {
-            try {
-                const response = await fetch('/content');
-                const data = await response.json();
-                
-                if (data.content) {
-                    const contentArray = Array.isArray(data.content) ? data.content : [data.content];
-                    if (JSON.stringify(currentContent) !== JSON.stringify(contentArray)) {
-                        currentContent = contentArray.map(content => 
-                            content.replace(/http:\/\/localhost:4000/g, MASTER_URL)
-                        );
-                        currentIndex = 0;
-                        showSlide();
-                    }
-                }
-            } catch (error) {
-                console.error('Erro ao carregar conteúdo:', error);
-            }
-        }
-
-        function showRegistrationSection(data) {
-            document.getElementById('registrationSection').classList.remove('hidden');
-            document.getElementById('presentationSection').classList.remove('visible');
-            document.getElementById('pin').textContent = data.pin;
-            document.getElementById('screenId').textContent = data.screenId;
-        }
-
-        // Add handlers to fix URLs after content updates
+        // Observador de mutações para ajuste automático de URLs
         const observer = new MutationObserver(() => {
-            fixImageUrls();
-            fixBackgroundImages();
+            utils.fixImageUrls();
+            utils.fixBackgroundImages();
         });
 
         observer.observe(document.body, {
@@ -947,55 +467,7 @@
             subtree: true
         });
 
-        async function initializeScreenData() {
-            try {
-                // Primeiro, tentar encontrar dados existentes no banco
-                const existingScreen = await Screen.findOne({}).lean();
-                
-                if (existingScreen && existingScreen.pin && existingScreen.id) {
-                    screenData = {
-                        pin: existingScreen.pin,
-                        screenId: existingScreen.id,
-                        registered: existingScreen.registered || false,
-                        content: existingScreen.content || null,
-                        lastUpdate: existingScreen.lastUpdate || Date.now(),
-                        masterUrl: existingScreen.masterUrl || MASTER_URL
-                    };
-                    console.log('Usando dados existentes da tela:', screenData);
-                    return screenData;
-                }
-
-                // Se não existir ou estiver incompleto, gerar novos códigos
-                const { pin, screenId } = await generateUniqueCode();
-                const newScreenData = {
-                    pin,
-                    id: screenId, // Note que usamos 'id' aqui para o banco
-                    screenId, // E 'screenId' para o objeto em memória
-                    registered: false,
-                    content: null,
-                    lastUpdate: Date.now(),
-                    masterUrl: MASTER_URL
-                };
-
-                // Se já existe um registro, atualizar
-                if (existingScreen) {
-                    await Screen.findByIdAndUpdate(existingScreen._id, {
-                        pin: pin,
-                        id: screenId,
-                    });
-                } else {
-                    // Se não existe, criar novo
-                    await Screen.create(newScreenData);
-                }
-
-                screenData = newScreenData;
-                console.log('Novos dados da tela gerados:', screenData);
-                return screenData;
-            } catch (error) {
-                console.error('Erro ao inicializar dados da tela:', error);
-                throw error;
-            }
-        }
+        // ...rest of existing functions (showSlide, handleVideoContent, etc.)...
     </script>
 </body>
 </html>

@@ -44,13 +44,22 @@ const screenCache = {
 // Função para verificar e atualizar cache
 async function getScreenData() {
     try {
-        // Se já temos dados em memória válidos, retornar eles
+        // Primeiro tentar usar dados em memória
         if (screenData?.pin && screenData?.screenId) {
+            console.log('Usando dados em memória:', screenData);
             return screenData;
         }
 
-        // Tentar buscar do banco de dados usando uma query mais específica
-        const existingScreen = await Screen.findOne({}).sort({ _id: -1 }).lean();
+        console.log('Buscando dados no banco...');
+        
+        // Fazer uma busca mais específica no banco
+        const existingScreen = await Screen.findOne({})
+            .sort({ _id: -1 })
+            .select('pin id registered content lastUpdate masterUrl')
+            .lean();
+
+        console.log('Resultado da busca no banco:', existingScreen);
+
         if (existingScreen?.pin && existingScreen?.id) {
             screenData = {
                 pin: existingScreen.pin,
@@ -64,41 +73,28 @@ async function getScreenData() {
             return screenData;
         }
 
+        console.log('Nenhum dado encontrado no banco');
         return null;
     } catch (error) {
         console.error('Erro ao buscar dados da tela:', error);
-        // Se já tivermos dados em memória, usar eles como fallback
         return screenData || null;
     }
 }
 
-// Modificar a função initializeScreenData para ser totalmente independente
+// Modificar a função initializeScreenData para evitar duplicações
 async function initializeScreenData() {
     try {
-        // Primeiro, tentar recuperar dados existentes
+        console.log('Iniciando inicialização dos dados...');
+
+        // Primeiro, verificar se já temos dados válidos
         const existingData = await getScreenData();
         if (existingData?.pin && existingData?.screenId) {
             console.log('Usando dados existentes:', existingData);
             return existingData;
         }
 
-        // Se não houver dados, verificar novamente no banco
-        const existingScreen = await Screen.findOne({}).sort({ _id: -1 }).lean();
-        if (existingScreen?.pin && existingScreen?.id) {
-            screenData = {
-                pin: existingScreen.pin,
-                screenId: existingScreen.id,
-                registered: existingScreen.registered || false,
-                content: existingScreen.content || null,
-                lastUpdate: existingScreen.lastUpdate || Date.now(),
-                masterUrl: existingScreen.masterUrl || MASTER_URL
-            };
-            console.log('Dados recuperados do banco durante inicialização:', screenData);
-            return screenData;
-        }
-
-        // Se realmente não existir nenhum dado, só então criar novos
-        console.log('Nenhum dado encontrado, gerando novos...');
+        // Se não houver dados, criar novo registro
+        console.log('Gerando novos dados...');
         const pin = generateRandomString(4).toUpperCase();
         const screenId = generateRandomString(8);
         
@@ -109,17 +105,39 @@ async function initializeScreenData() {
             registered: false,
             content: null,
             lastUpdate: Date.now(),
-            masterUrl: null // Será definido apenas quando registrado
+            masterUrl: null
         };
 
-        // Salvar no banco de dados
-        await Screen.create(newScreenData);
-        
-        screenData = newScreenData;
-        console.log('Novos dados da tela gerados:', screenData);
-        return screenData;
+        try {
+            // Verificar novamente antes de criar para evitar duplicação
+            const doubleCheck = await Screen.findOne({}).lean();
+            if (doubleCheck?.pin && doubleCheck?.id) {
+                console.log('Dados encontrados em segunda verificação:', doubleCheck);
+                return {
+                    pin: doubleCheck.pin,
+                    screenId: doubleCheck.id,
+                    registered: doubleCheck.registered || false,
+                    content: doubleCheck.content || null,
+                    lastUpdate: doubleCheck.lastUpdate || Date.now(),
+                    masterUrl: doubleCheck.masterUrl || MASTER_URL
+                };
+            }
+
+            // Criar novo registro no banco
+            console.log('Salvando novos dados no banco...');
+            await Screen.create(newScreenData);
+            screenData = newScreenData;
+            console.log('Novos dados salvos com sucesso:', screenData);
+            return screenData;
+        } catch (dbError) {
+            if (dbError.code === 11000) { // Duplicate key error
+                console.log('Detectada tentativa de duplicação, recuperando dados existentes...');
+                return await getScreenData();
+            }
+            throw dbError;
+        }
     } catch (error) {
-        console.error('Erro ao inicializar dados da tela:', error);
+        console.error('Erro na inicialização:', error);
         throw error;
     }
 }
@@ -132,8 +150,8 @@ async function startServer() {
         console.log('Banco de dados conectado');
         
         // Inicializar dados da tela
-        await initializeScreenData();
-        console.log('Dados da tela inicializados');
+        const initialData = await initializeScreenData();
+        console.log('Dados inicializados:', initialData);
 
         // Configurar rotas
         app.get('/screen-data', async (req, res) => {
@@ -144,12 +162,15 @@ async function startServer() {
                     throw new Error('Dados da tela não encontrados');
                 }
 
-                res.json({
+                const responseData = {
                     pin: data.pin,
                     screenId: data.screenId,
                     registered: data.registered || false,
                     masterUrl: data.masterUrl || MASTER_URL
-                });
+                };
+
+                console.log('Enviando dados da tela:', responseData);
+                res.json(responseData);
             } catch (error) {
                 console.error('Erro ao enviar dados da tela:', error);
                 res.status(500).json({

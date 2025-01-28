@@ -43,34 +43,15 @@ const screenCache = {
 
 // Função para verificar e atualizar cache
 async function getScreenData() {
-    if (screenData) {
-        return screenData;
-    }
-
-    const existingScreen = await Screen.findOne({}).lean();
-    if (existingScreen) {
-        screenData = {
-            pin: existingScreen.pin,
-            screenId: existingScreen.id,
-            registered: existingScreen.registered || false,
-            content: existingScreen.content || null,
-            lastUpdate: existingScreen.lastUpdate || Date.now(),
-            masterUrl: existingScreen.masterUrl || MASTER_URL
-        };
-        return screenData;
-    }
-
-    return null;
-}
-
-// Modificar a função initializeScreenData para ser totalmente independente
-async function initializeScreenData() {
     try {
-        // Primeiro, verificar se já existe um registro no banco de dados
-        const existingScreen = await Screen.findOne({}).lean();
-        
-        // Se existir e tiver dados válidos, usar estes dados
-        if (existingScreen && existingScreen.pin && existingScreen.id) {
+        // Se já temos dados em memória válidos, retornar eles
+        if (screenData?.pin && screenData?.screenId) {
+            return screenData;
+        }
+
+        // Tentar buscar do banco de dados usando uma query mais específica
+        const existingScreen = await Screen.findOne({}).sort({ _id: -1 }).lean();
+        if (existingScreen?.pin && existingScreen?.id) {
             screenData = {
                 pin: existingScreen.pin,
                 screenId: existingScreen.id,
@@ -79,12 +60,46 @@ async function initializeScreenData() {
                 lastUpdate: existingScreen.lastUpdate || Date.now(),
                 masterUrl: existingScreen.masterUrl || MASTER_URL
             };
-            console.log('Usando dados existentes da tela:', screenData);
+            console.log('Dados recuperados do banco:', screenData);
             return screenData;
         }
 
-        // Se não existir, gerar novos dados localmente
-        const pin = generateRandomString(4).toUpperCase(); // PIN mais legível
+        return null;
+    } catch (error) {
+        console.error('Erro ao buscar dados da tela:', error);
+        // Se já tivermos dados em memória, usar eles como fallback
+        return screenData || null;
+    }
+}
+
+// Modificar a função initializeScreenData para ser totalmente independente
+async function initializeScreenData() {
+    try {
+        // Primeiro, tentar recuperar dados existentes
+        const existingData = await getScreenData();
+        if (existingData?.pin && existingData?.screenId) {
+            console.log('Usando dados existentes:', existingData);
+            return existingData;
+        }
+
+        // Se não houver dados, verificar novamente no banco
+        const existingScreen = await Screen.findOne({}).sort({ _id: -1 }).lean();
+        if (existingScreen?.pin && existingScreen?.id) {
+            screenData = {
+                pin: existingScreen.pin,
+                screenId: existingScreen.id,
+                registered: existingScreen.registered || false,
+                content: existingScreen.content || null,
+                lastUpdate: existingScreen.lastUpdate || Date.now(),
+                masterUrl: existingScreen.masterUrl || MASTER_URL
+            };
+            console.log('Dados recuperados do banco durante inicialização:', screenData);
+            return screenData;
+        }
+
+        // Se realmente não existir nenhum dado, só então criar novos
+        console.log('Nenhum dado encontrado, gerando novos...');
+        const pin = generateRandomString(4).toUpperCase();
         const screenId = generateRandomString(8);
         
         const newScreenData = {
@@ -123,19 +138,18 @@ async function startServer() {
         // Configurar rotas
         app.get('/screen-data', async (req, res) => {
             try {
-                // Usar dados existentes ou inicializar apenas se necessário
-                const data = await getScreenData() || await initializeScreenData();
-                
-                const responseData = {
+                // Usar apenas getScreenData para evitar reinicialização
+                const data = await getScreenData();
+                if (!data) {
+                    throw new Error('Dados da tela não encontrados');
+                }
+
+                res.json({
                     pin: data.pin,
                     screenId: data.screenId,
                     registered: data.registered || false,
                     masterUrl: data.masterUrl || MASTER_URL
-                };
-
-                console.log('Enviando dados da tela:', responseData);
-
-                res.json(responseData);
+                });
             } catch (error) {
                 console.error('Erro ao enviar dados da tela:', error);
                 res.status(500).json({
@@ -360,8 +374,11 @@ async function startServer() {
         // Modificar a rota /connection-status para não reinicializar
         app.get('/connection-status', async (req, res) => {
             try {
-                const data = await getScreenData() || await initializeScreenData();
-                
+                const data = await getScreenData();
+                if (!data) {
+                    throw new Error('Dados da tela não encontrados');
+                }
+
                 res.json({
                     registered: data.registered,
                     screenId: data.screenId,
@@ -369,10 +386,10 @@ async function startServer() {
                     lastUpdate: data.lastUpdate
                 });
             } catch (error) {
-                console.error('Error checking connection status:', error);
+                console.error('Erro ao verificar status:', error);
                 res.status(500).json({
                     success: false,
-                    message: 'Error checking connection status'
+                    message: 'Erro ao verificar status'
                 });
             }
         });

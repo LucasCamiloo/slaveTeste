@@ -18,20 +18,105 @@ const appState = {
     cacheTTL: 30000, // 30 seconds
 };
 
-// Update the caching function to be more resilient
+// Função para gerar ID de dispositivo único
+function generateDeviceId() {
+    const storedId = localStorage.getItem('deviceId');
+    if (storedId) return storedId;
+    
+    const newId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    localStorage.setItem('deviceId', newId);
+    return newId;
+}
+
+// Funções de apresentação
+function startPresentation() {
+    console.log('🎬 Iniciando apresentação');
+    if (currentContent) {
+        showSlide();
+    } else {
+        console.log('ℹ️ Nenhum conteúdo para apresentar');
+        showWaitingScreen();
+    }
+}
+
+function showWaitingScreen() {
+    const slideContent = document.getElementById('slideContent');
+    if (slideContent) {
+        slideContent.innerHTML = `
+            <div style="color: white; text-align: center; padding: 20px;">
+                <h2>Aguardando conteúdo...</h2>
+                <p>A tela está conectada e pronta para exibir conteúdo.</p>
+            </div>
+        `;
+    }
+}
+
+function showSlide() {
+    if (!currentContent || currentContent.length === 0) {
+        showWaitingScreen();
+        return;
+    }
+
+    const slideContent = document.getElementById('slideContent');
+    if (!slideContent) return;
+
+    // Limpar conteúdo existente
+    slideContent.innerHTML = '';
+
+    // Mostrar slide atual
+    const content = currentContent[currentIndex];
+    slideContent.innerHTML = content;
+
+    // Lidar com conteúdo especial (como listas ou vídeos)
+    handleSpecialContent(slideContent);
+
+    // Agendar próximo slide
+    if (currentContent.length > 1) {
+        setTimeout(() => {
+            currentIndex = (currentIndex + 1) % currentContent.length;
+            showSlide();
+        }, 10000); // 10 segundos por slide
+    }
+}
+
+function handleSpecialContent(container) {
+    // Lidar com conteúdo de lista, se presente
+    if (container.querySelector('.product-list-item')) {
+        handleListContent(container);
+    }
+
+    // Lidar com conteúdo de vídeo, se presente
+    const video = container.querySelector('video');
+    if (video) {
+        handleVideoContent(video);
+    }
+}
+
+function handleVideoContent(video) {
+    video.play().catch(error => {
+        console.error('Erro ao reproduzir vídeo:', error);
+    });
+
+    video.onended = () => {
+        currentIndex = (currentIndex + 1) % currentContent.length;
+        showSlide();
+    };
+}
+
+// Função de cache aprimorada
 async function cacheScreenData() {
     try {
         if (appState.screenData && Date.now() - appState.lastFetch < appState.cacheTTL) {
-            console.log('📦 Using cached data:', appState.screenData);
+            console.log('📦 Usando dados em cache:', appState.screenData);
             return appState.screenData;
         }
 
-        // Try to get data from localStorage first
+        // Tentar obter dados do localStorage primeiro
         const storedData = localStorage.getItem('screenData');
         if (storedData) {
             const parsedData = JSON.parse(storedData);
             if (parsedData.screenId && parsedData.pin) {
-                console.log('📦 Using stored data:', parsedData);
+                console.log('📦 Usando dados armazenados:', parsedData);
                 appState.screenData = parsedData;
                 appState.lastFetch = Date.now();
                 return parsedData;
@@ -42,18 +127,18 @@ async function cacheScreenData() {
         const data = await response.json();
         
         if (!data || !data.screenId) {
-            throw new Error('Invalid screen data received');
+            throw new Error('Dados da tela inválidos recebidos');
         }
 
-        // Store in localStorage for persistence
+        // Armazenar no localStorage para persistência
         localStorage.setItem('screenData', JSON.stringify(data));
         appState.screenData = data;
         appState.lastFetch = Date.now();
-        console.log('🔄 Cache updated:', appState.screenData);
+        console.log('🔄 Cache atualizado:', appState.screenData);
         return data;
     } catch (error) {
-        console.error('❌ Cache update failed:', error);
-        // Try to use stored data as fallback
+        console.error('❌ Falha ao atualizar cache:', error);
+        // Tentar usar dados armazenados como fallback
         const storedData = localStorage.getItem('screenData');
         if (storedData) {
             return JSON.parse(storedData);
@@ -62,89 +147,12 @@ async function cacheScreenData() {
     }
 }
 
-// Update getScreenData to use the cache
+// Função para obter dados da tela usando o cache
 async function getScreenData() {
     return await cacheScreenData();
 }
 
-// Adicionar função para gerar ID de dispositivo único
-function generateDeviceId() {
-    const storedId = localStorage.getItem('deviceId');
-    if (storedId) return storedId;
-    
-    const newId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    localStorage.setItem('deviceId', newId);
-    return newId;
-}
-
-// Remove any code that tries to register automatically if no pin or screenId is found
-// Adicionar logs no initialize do frontend
-// Update initialize to ensure consistent screen ID
-async function initialize() {
-    console.log('=== Inicializando Frontend ===');
-    try {
-        const screenData = await getScreenData();
-        console.log('📱 Estado inicial:', screenData);
-
-        // Ensure we have valid screen data
-        if (!screenData || !screenData.screenId) {
-            throw new Error('Dados da tela inválidos');
-        }
-
-        if (screenData.registered) {
-            console.log('✅ Tela registrada, iniciando apresentação');
-            showPresentationSection();
-            startPresentation();
-        } else {
-            console.log('ℹ️ Tela não registrada, mostrando registro');
-            showRegistrationSection(screenData);
-        }
-
-        initSSE();
-    } catch (error) {
-        console.error('❌ Erro na inicialização:', error);
-        showConnectionError();
-    }
-}
-
-// Update checkConnectionStatus to handle ID verification better
-async function checkConnectionStatus() {
-    try {
-        const screenData = await getScreenData();
-        if (!screenData || !screenData.screenId) {
-            throw new Error('No valid screen data available');
-        }
-
-        const response = await fetch(`${MASTER_URL}/screens`);
-        const { screens } = await response.json();
-        
-        // Find this screen in master's list
-        const registeredScreen = screens.find(screen => screen.id === screenData.screenId);
-
-        if (!registeredScreen) {
-            console.log('ℹ️ Screen not found in master, showing registration');
-            showRegistrationSection(screenData);
-            return;
-        }
-
-        if (registeredScreen.registered) {
-            console.log('✅ Screen verified in master:', registeredScreen);
-            showPresentationSection();
-            updateConnectionStatus({
-                registered: true,
-                masterUrl: MASTER_URL
-            });
-        } else {
-            console.log('ℹ️ Screen found but not registered');
-            showRegistrationSection(screenData);
-        }
-    } catch (error) {
-        console.error('❌ Error checking status:', error);
-        showConnectionError();
-    }
-}
-
-// Modificar showRegistrationSection para garantir exibição dos dados
+// Função para mostrar a seção de registro
 function showRegistrationSection(data) {
     console.log('Mostrando seção de registro com dados:', data);
     
@@ -167,12 +175,127 @@ function showRegistrationSection(data) {
     screenIdSpan.textContent = data.screenId;
 }
 
-// Modify handleRegistrationUpdate to avoid changing PIN/ID
+// Função para mostrar a seção de apresentação
+function showPresentationSection() {
+    const registrationSection = document.getElementById('registrationSection');
+    const presentationSection = document.getElementById('presentationSection');
+
+    registrationSection.classList.add('hidden');
+    presentationSection.classList.add('visible');
+}
+
+// Função para atualizar o status da conexão na interface
+function updateConnectionStatus(status) {
+    const statusElement = document.getElementById('connectionStatus');
+    if (statusElement) {
+        if (status.registered) {
+            statusElement.textContent = 'Conectado';
+            statusElement.classList.remove('disconnected');
+            statusElement.classList.add('connected');
+        } else {
+            statusElement.textContent = 'Desconectado';
+            statusElement.classList.remove('connected');
+            statusElement.classList.add('disconnected');
+        }
+    }
+}
+
+// Função para mostrar erro de conexão
+function showConnectionError() {
+    const statusElement = document.getElementById('connectionStatus');
+    if (statusElement) {
+        statusElement.textContent = 'Erro de conexão - Tentando reconectar...';
+        statusElement.classList.add('disconnected');
+        statusElement.classList.remove('connected', 'hidden');
+    }
+
+    // Mostrar seção de registro após erro
+    getScreenData().then(data => {
+        if (data) {
+            showRegistrationSection(data);
+        }
+    }).catch(error => {
+        console.error('Erro ao recuperar dados após erro de conexão:', error);
+    });
+
+    // Tentar reconectar após um atraso
+    setTimeout(() => {
+        console.log('🔄 Tentando reconectar...');
+        initialize();
+    }, 5000);
+}
+
+// Função de inicialização
+async function initialize() {
+    console.log('=== Inicializando Frontend ===');
+    try {
+        const screenData = await getScreenData();
+        console.log('📱 Estado inicial:', screenData);
+
+        // Garantir que temos dados válidos
+        if (!screenData || !screenData.screenId) {
+            throw new Error('Dados da tela inválidos');
+        }
+
+        if (screenData.registered) {
+            console.log('✅ Tela registrada, iniciando apresentação');
+            showPresentationSection();
+            startPresentation();
+        } else {
+            console.log('ℹ️ Tela não registrada, mostrando registro');
+            showRegistrationSection(screenData);
+        }
+
+        initSSE();
+    } catch (error) {
+        console.error('❌ Erro na inicialização:', error);
+        showConnectionError();
+    }
+}
+
+// Função para verificar o status da conexão com o master
+async function checkConnectionStatus() {
+    try {
+        const screenData = await getScreenData();
+        if (!screenData || !screenData.screenId) {
+            throw new Error('Nenhum dado válido da tela disponível');
+        }
+
+        const response = await fetch(`${MASTER_URL}/screens`);
+        const { screens } = await response.json();
+        
+        // Encontrar esta tela na lista do master
+        const registeredScreen = screens.find(screen => screen.id === screenData.screenId);
+
+        if (!registeredScreen) {
+            console.log('ℹ️ Tela não encontrada no master, mostrando registro');
+            showRegistrationSection(screenData);
+            return;
+        }
+
+        if (registeredScreen.registered) {
+            console.log('✅ Tela verificada no master:', registeredScreen);
+            showPresentationSection();
+            updateConnectionStatus({
+                registered: true,
+                masterUrl: MASTER_URL
+            });
+        } else {
+            console.log('ℹ️ Tela encontrada, mas não registrada');
+            showRegistrationSection(screenData);
+        }
+    } catch (error) {
+        console.error('❌ Erro ao verificar status:', error);
+        showConnectionError();
+    }
+}
+
+// Função para processar atualizações de registro
 async function handleRegistrationUpdate(data) {
     console.log('🔄 Processando atualização de registro:', data);
 
     try {
-        // Recarregar dados da tela para ter informações atualizadas
+        // Recarregar dados da tela para informações atualizadas
         await cacheScreenData();
 
         if (data.screenId && data.screenId !== cachedScreenData.screenId) {
@@ -181,7 +304,7 @@ async function handleRegistrationUpdate(data) {
         }
 
         if (data.registered) {
-            console.log('✅ Tela registrada, atualizando interface');
+            console.log('✅ Tela registrada no master, atualizando interface');
             showPresentationSection();
             startPresentation();
             updateConnectionStatus({
@@ -200,51 +323,7 @@ async function handleRegistrationUpdate(data) {
     }
 }
 
-function handleListContent(container) {
-    if (window.listInterval) {
-        clearInterval(window.listInterval);
-    }
-
-    const listItems = Array.from(container.querySelectorAll('.product-list-item'));
-    let currentListIndex = 0;
-
-    function rotateListItem() {
-        listItems.forEach(item => item.classList.remove('active'));
-        const currentItem = listItems[currentListIndex];
-        currentItem.classList.add('active');
-        
-        let imageUrl = currentItem.dataset.imageUrl;
-        if (imageUrl) {
-            // Usar apenas URLs do GridFS
-            if (!imageUrl.startsWith('/files/')) {
-                console.error('URL inválida:', imageUrl);
-                console.error('URL inválida:', imageUrl);
-                imageUrl = '/files/default-product';
-            }
-            if (!imageUrl.startsWith('http')) {
-                imageUrl = `http://localhost:4000${imageUrl}`;
-            }
-        }
-        
-        const featuredImage = container.querySelector('.featured-image');
-        const featuredName = container.querySelector('.featured-name');
-        const featuredPrice = container.querySelector('.featured-price');
-
-        if (featuredImage) {
-            featuredImage.src = imageUrl;
-            featuredImage.onerror = () => {
-                console.error('Erro ao carregar imagem:', imageUrl);
-                featuredImage.src = 'http://localhost:4000/files/default-product.png';
-            };
-        }
-        
-        // ...rest of existing code...
-    }
-
-    rotateListItem();
-}
-
-// Update SSE handling to properly handle registration events
+// Função para inicializar SSE
 function initSSE() {
     console.log('🔄 Iniciando SSE...');
     if (eventSource) {
@@ -268,7 +347,7 @@ function initSSE() {
 
                 const screenData = await getScreenData();
                 
-                // Only process messages for this screen
+                // Processar apenas mensagens para esta tela
                 if (data.screenId === screenData.screenId) {
                     console.log('✨ Processando mensagem para esta tela');
                     if (data.type === 'screen_update' && data.registered) {
@@ -311,6 +390,7 @@ function initSSE() {
     }
 }
 
+// Função para registrar a tela no master
 async function registerScreen() {
     try {
         const screenData = await getScreenData();
@@ -339,7 +419,7 @@ async function registerScreen() {
         console.log('✅ Registro bem sucedido:', data);
 
         if (data.success) {
-            // Force cache update
+            // Forçar atualização do cache
             await cacheScreenData();
             showPresentationSection();
             startPresentation();
@@ -350,104 +430,58 @@ async function registerScreen() {
     }
 }
 
-// Add presentation management functions
-function startPresentation() {
-    console.log('🎬 Iniciando apresentação');
-    if (currentContent) {
-        showSlide();
-    } else {
-        console.log('ℹ️ Nenhum conteúdo para apresentar');
-        showWaitingScreen();
-    }
-}
-
-function showWaitingScreen() {
-    const slideContent = document.getElementById('slideContent');
-    if (slideContent) {
-        slideContent.innerHTML = `
-            <div style="color: white; text-align: center; padding: 20px;">
-                <h2>Aguardando conteúdo...</h2>
-                <p>A tela está conectada e pronta para exibir conteúdo.</p>
-            </div>
-        `;
-    }
-}
-
-function showSlide() {
-    if (!currentContent || currentContent.length === 0) {
-        showWaitingScreen();
-        return;
+// Função para processar listas de conteúdo
+function handleListContent(container) {
+    if (window.listInterval) {
+        clearInterval(window.listInterval);
     }
 
-    const slideContent = document.getElementById('slideContent');
-    if (!slideContent) return;
+    const listItems = Array.from(container.querySelectorAll('.product-list-item'));
+    let currentListIndex = 0;
 
-    // Clear any existing content
-    slideContent.innerHTML = '';
-
-    // Show current slide
-    const content = currentContent[currentIndex];
-    slideContent.innerHTML = content;
-
-    // Handle any special content (like lists or videos)
-    handleSpecialContent(slideContent);
-
-    // Schedule next slide
-    if (currentContent.length > 1) {
-        setTimeout(() => {
-            currentIndex = (currentIndex + 1) % currentContent.length;
-            showSlide();
-        }, 10000); // 10 seconds per slide
-    }
-}
-
-function handleSpecialContent(container) {
-    // Handle list content if present
-    if (container.querySelector('.product-list-item')) {
-        handleListContent(container);
-    }
-
-    // Handle video content if present
-    const video = container.querySelector('video');
-    if (video) {
-        handleVideoContent(video);
-    }
-}
-
-function handleVideoContent(video) {
-    video.play().catch(error => {
-        console.error('Error playing video:', error);
-    });
-
-    video.onended = () => {
-        currentIndex = (currentIndex + 1) % currentContent.length;
-        showSlide();
-    };
-}
-
-// Update error handling
-function showConnectionError() {
-    const statusElement = document.getElementById('connectionStatus');
-    if (statusElement) {
-        statusElement.textContent = 'Erro de conexão - Tentando reconectar...';
-        statusElement.classList.add('disconnected');
-        statusElement.classList.remove('connected', 'hidden');
-    }
-
-    // Show registration section after error
-    getScreenData().then(data => {
-        if (data) {
-            showRegistrationSection(data);
+    function rotateListItem() {
+        listItems.forEach(item => item.classList.remove('active'));
+        const currentItem = listItems[currentListIndex];
+        currentItem.classList.add('active');
+        
+        let imageUrl = currentItem.dataset.imageUrl;
+        if (imageUrl) {
+            // Usar apenas URLs do GridFS
+            if (!imageUrl.startsWith('/files/')) {
+                console.error('URL inválida:', imageUrl);
+                imageUrl = '/files/default-product.png';
+            }
+            if (!imageUrl.startsWith('http')) {
+                imageUrl = `http://localhost:4000${imageUrl}`;
+            }
         }
-    }).catch(error => {
-        console.error('Erro ao recuperar dados após erro de conexão:', error);
-    });
+        
+        const featuredImage = container.querySelector('.featured-image');
+        const featuredName = container.querySelector('.featured-name');
+        const featuredPrice = container.querySelector('.featured-price');
 
-    // Try to reconnect after a delay
-    setTimeout(() => {
-        console.log('🔄 Tentando reconectar...');
-        initialize();
-    }, 5000);
+        if (featuredImage) {
+            featuredImage.src = imageUrl;
+            featuredImage.onerror = () => {
+                console.error('Erro ao carregar imagem:', imageUrl);
+                featuredImage.src = 'http://localhost:4000/files/default-product.png';
+            };
+        }
+        
+        // Atualizar nome e preço, se necessário
+        if (featuredName && currentItem.dataset.name) {
+            featuredName.textContent = currentItem.dataset.name;
+        }
+        if (featuredPrice && currentItem.dataset.price) {
+            featuredPrice.textContent = `R$ ${currentItem.dataset.price}`;
+        }
+
+        currentListIndex = (currentListIndex + 1) % listItems.length;
+    }
+
+    rotateListItem();
+    window.listInterval = setInterval(rotateListItem, 10000); // 10 segundos
 }
 
-// ...rest of existing code...
+// Chamar initialize quando o DOM estiver pronto
+document.addEventListener('DOMContentLoaded', initialize);

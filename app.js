@@ -81,8 +81,16 @@ async function getScreenData() {
     }
 }
 
+// Ensure initializeScreenData is called only once during server startup
+let isInitialized = false;
+
 // Modificar a função initializeScreenData para evitar duplicações
 async function initializeScreenData() {
+    if (isInitialized) {
+        console.log('Screen data already initialized.');
+        return screenData;
+    }
+
     try {
         console.log('Iniciando inicialização dos dados...');
 
@@ -90,6 +98,7 @@ async function initializeScreenData() {
         const existingData = await getScreenData();
         if (existingData?.pin && existingData?.screenId) {
             console.log('Usando dados existentes:', existingData);
+            isInitialized = true;
             return existingData;
         }
 
@@ -113,7 +122,7 @@ async function initializeScreenData() {
             const doubleCheck = await Screen.findOne({}).lean();
             if (doubleCheck?.pin && doubleCheck?.id) {
                 console.log('Dados encontrados em segunda verificação:', doubleCheck);
-                return {
+                screenData = {
                     pin: doubleCheck.pin,
                     screenId: doubleCheck.id,
                     registered: doubleCheck.registered || false,
@@ -121,18 +130,23 @@ async function initializeScreenData() {
                     lastUpdate: doubleCheck.lastUpdate || Date.now(),
                     masterUrl: doubleCheck.masterUrl || MASTER_URL
                 };
+                isInitialized = true;
+                return screenData;
             }
 
             // Criar novo registro no banco
             console.log('Salvando novos dados no banco...');
             await Screen.create(newScreenData);
             screenData = newScreenData;
+            isInitialized = true;
             console.log('Novos dados salvos com sucesso:', screenData);
             return screenData;
         } catch (dbError) {
             if (dbError.code === 11000) { // Duplicate key error
                 console.log('Detectada tentativa de duplicação, recuperando dados existentes...');
-                return await getScreenData();
+                screenData = await getScreenData();
+                isInitialized = true;
+                return screenData;
             }
             throw dbError;
         }
@@ -149,7 +163,7 @@ async function startServer() {
         await connectDB();
         console.log('Banco de dados conectado');
         
-        // Inicializar dados da tela
+        // Inicializar dados da tela apenas uma vez
         const initialData = await initializeScreenData();
         console.log('Dados inicializados:', initialData);
 

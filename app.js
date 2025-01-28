@@ -36,26 +36,45 @@ function generateRandomString(length) {
 const ScreenManager = {
     data: null,
     initialized: false,
-    storageKey: 'screenData',
-    storagePath: path.join(__dirname, 'screenData.json'),
 
-    initialize() {
+    async initialize() {
         if (this.initialized) return this.data;
 
         try {
-            // Tentar carregar dados existentes
-            if (fs.existsSync(this.storagePath)) {
-                const savedData = JSON.parse(fs.readFileSync(this.storagePath, 'utf8'));
-                if (savedData && savedData.pin && savedData.screenId) {
-                    console.log('🔄 Recuperando dados salvos:', savedData);
-                    this.data = savedData;
-                    this.initialized = true;
-                    return this.data;
-                }
+            // Try to load existing screen data from MongoDB
+            const savedScreen = await Screen.findOne({ type: 'slave_screen' });
+
+            if (savedScreen && savedScreen.pin && savedScreen.screenId) {
+                console.log('🔄 Recuperando dados salvos:', savedScreen);
+                this.data = {
+                    pin: savedScreen.pin,
+                    screenId: savedScreen.screenId,
+                    registered: savedScreen.registered || false,
+                    content: savedScreen.content || null,
+                    lastUpdate: savedScreen.lastUpdate || Date.now(),
+                    masterUrl: savedScreen.masterUrl || null
+                };
+            } else {
+                console.log('🔄 Gerando novos dados...');
+                this.data = {
+                    pin: generateRandomString(4).toUpperCase(),
+                    screenId: generateRandomString(8),
+                    registered: false,
+                    content: null,
+                    lastUpdate: Date.now(),
+                    masterUrl: null
+                };
+                // Save new data to MongoDB
+                await this.persistData();
             }
 
-            // Se não houver dados salvos, criar novos
-            console.log('🔄 Gerando novos dados...');
+            this.initialized = true;
+            console.log('✅ Dados da tela:', this.data);
+            return this.data;
+
+        } catch (error) {
+            console.error('❌ Erro ao inicializar dados:', error);
+            // Fallback to memory-only if database fails
             this.data = {
                 pin: generateRandomString(4).toUpperCase(),
                 screenId: generateRandomString(8),
@@ -64,25 +83,25 @@ const ScreenManager = {
                 lastUpdate: Date.now(),
                 masterUrl: null
             };
-
-            this.persistData();
             this.initialized = true;
-            console.log('✅ Novos dados gerados:', this.data);
             return this.data;
-
-        } catch (error) {
-            console.error('❌ Erro ao inicializar dados:', error);
-            throw error;
         }
     },
 
-    persistData() {
+    async persistData() {
         try {
-            fs.writeFileSync(this.storagePath, JSON.stringify(this.data, null, 2));
+            await Screen.findOneAndUpdate(
+                { type: 'slave_screen' },
+                {
+                    ...this.data,
+                    type: 'slave_screen',
+                    lastUpdate: Date.now()
+                },
+                { upsert: true, new: true }
+            );
             console.log('💾 Dados persistidos com sucesso');
         } catch (error) {
             console.error('❌ Erro ao persistir dados:', error);
-            throw error;
         }
     },
 
@@ -93,20 +112,20 @@ const ScreenManager = {
         return this.data;
     },
 
-    updateRegistrationStatus(registered, masterUrl) {
+    async updateRegistrationStatus(registered, masterUrl) {
         if (!this.data) return;
         this.data.registered = registered;
         this.data.masterUrl = masterUrl;
         this.data.lastUpdate = Date.now();
-        this.persistData();
+        await this.persistData();
         console.log('🔄 Status de registro atualizado:', this.data);
     },
 
-    updateContent(content) {
+    async updateContent(content) {
         if (!this.data) return;
         this.data.content = content;
         this.data.lastUpdate = Date.now();
-        this.persistData();
+        await this.persistData();
         console.log('🔄 Conteúdo atualizado');
     }
 };
@@ -119,7 +138,7 @@ async function startServer() {
         console.log('📦 Database connected (read-only)');
         
         // Inicializar dados da tela em memória
-        ScreenManager.initialize();
+        await ScreenManager.initialize();
         console.log('🚀 Server initialization complete');
 
         // Screen data endpoint

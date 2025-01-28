@@ -166,43 +166,50 @@ async function startServer() {
         });
 
         // Registro - apenas atualiza status em memória
-        app.post('/register', (req, res) => {
+        app.post('/register', async (req, res) => {
             try {
                 const { pin, screenId, masterUrl } = req.body;
                 console.log('📝 Recebendo registro:', { pin, screenId, masterUrl });
 
-                const data = ScreenManager.getData();
+                if (!pin || !screenId || !masterUrl) {
+                    console.error('❌ Dados inválidos:', { pin, screenId, masterUrl });
+                    return res.status(400).json({
+                        success: false,
+                        message: 'Missing required fields'
+                    });
+                }
+
+                const data = await ScreenManager.getData();
                 console.log('📝 Dados atuais:', data);
                 
                 if (pin !== data.pin || screenId !== data.screenId) {
-                    console.error('❌ Dados inválidos:', { expected: data, received: { pin, screenId } });
+                    console.error('❌ Credenciais inválidas:', { 
+                        expected: { pin: data.pin, screenId: data.screenId },
+                        received: { pin, screenId }
+                    });
                     return res.status(400).json({
                         success: false,
                         message: 'Invalid credentials'
                     });
                 }
 
-                // Atualizar status de registro
-                ScreenManager.updateRegistrationStatus(true, masterUrl);
-                console.log('✅ Tela registrada:', ScreenManager.getData());
+                // Update registration status
+                await ScreenManager.updateRegistrationStatus(true, masterUrl);
+                const updatedData = await ScreenManager.getData();
+                console.log('✅ Tela registrada:', updatedData);
 
-                // Notificar clientes SSE sobre a mudança
-                const sseData = {
-                    type: 'screen_update',
-                    screenId: screenId,
-                    registered: true,
-                    masterUrl: masterUrl,
-                    action: 'registration'
-                };
-
+                // Save to file for persistence
                 try {
-                    notifyClients(sseData);
-                    console.log('✅ Clientes SSE notificados');
+                    fs.writeFileSync('screenData.json', JSON.stringify({
+                        ...updatedData,
+                        registered: true,
+                        masterUrl
+                    }));
                 } catch (err) {
-                    console.error('❌ Erro ao notificar clientes:', err);
+                    console.error('❌ Erro ao salvar dados:', err);
+                    // Continue even if save fails
                 }
 
-                // Enviar resposta de sucesso
                 res.json({ 
                     success: true, 
                     message: 'Registration successful',
@@ -213,7 +220,10 @@ async function startServer() {
 
             } catch (error) {
                 console.error('❌ Erro no registro:', error);
-                res.status(500).json({ error: 'Internal server error' });
+                res.status(500).json({ 
+                    success: false, 
+                    message: error.message || 'Internal server error'
+                });
             }
         });
 

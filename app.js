@@ -41,20 +41,21 @@ const ScreenManager = {
         if (this.initialized) return this.data;
 
         try {
-            // Try to load existing screen data from MongoDB
-            const savedScreen = await Screen.findOne({ type: 'slave_screen' });
+            // Try to find existing screen in database first
+            const existingScreen = await Screen.findOne({ type: 'slave_screen' });
 
-            if (savedScreen && savedScreen.pin && savedScreen.screenId) {
-                console.log('🔄 Recuperando dados salvos:', savedScreen);
+            if (existingScreen) {
+                console.log('🔄 Recuperando dados existentes do banco:', existingScreen);
                 this.data = {
-                    pin: savedScreen.pin,
-                    screenId: savedScreen.screenId,
-                    registered: savedScreen.registered || false,
-                    content: savedScreen.content || null,
-                    lastUpdate: savedScreen.lastUpdate || Date.now(),
-                    masterUrl: savedScreen.masterUrl || null
+                    pin: existingScreen.pin,
+                    screenId: existingScreen.id,
+                    registered: existingScreen.registered,
+                    content: existingScreen.content,
+                    lastUpdate: existingScreen.lastUpdate,
+                    masterUrl: existingScreen.masterUrl
                 };
             } else {
+                // Generate new data if none exists
                 console.log('🔄 Gerando novos dados...');
                 this.data = {
                     pin: generateRandomString(4).toUpperCase(),
@@ -64,69 +65,30 @@ const ScreenManager = {
                     lastUpdate: Date.now(),
                     masterUrl: null
                 };
-                // Save new data to MongoDB
-                await this.persistData();
+
+                // Save new screen to database
+                await Screen.create({
+                    id: this.data.screenId,
+                    pin: this.data.pin,
+                    type: 'slave_screen',
+                    registered: false
+                });
             }
 
             this.initialized = true;
             console.log('✅ Dados da tela:', this.data);
             return this.data;
-
         } catch (error) {
             console.error('❌ Erro ao inicializar dados:', error);
-            // Fallback to memory-only if database fails
-            this.data = {
-                pin: generateRandomString(4).toUpperCase(),
-                screenId: generateRandomString(8),
-                registered: false,
-                content: null,
-                lastUpdate: Date.now(),
-                masterUrl: null
-            };
-            this.initialized = true;
-            return this.data;
+            throw error;
         }
     },
 
-    async persistData() {
-        try {
-            await Screen.findOneAndUpdate(
-                { type: 'slave_screen' },
-                {
-                    ...this.data,
-                    type: 'slave_screen',
-                    lastUpdate: Date.now()
-                },
-                { upsert: true, new: true }
-            );
-            console.log('💾 Dados persistidos com sucesso');
-        } catch (error) {
-            console.error('❌ Erro ao persistir dados:', error);
-        }
-    },
-
-    getData() {
+    async getData() {
         if (!this.initialized) {
-            return this.initialize();
+            await this.initialize();
         }
         return this.data;
-    },
-
-    async updateRegistrationStatus(registered, masterUrl) {
-        if (!this.data) return;
-        this.data.registered = registered;
-        this.data.masterUrl = masterUrl;
-        this.data.lastUpdate = Date.now();
-        await this.persistData();
-        console.log('🔄 Status de registro atualizado:', this.data);
-    },
-
-    async updateContent(content) {
-        if (!this.data) return;
-        this.data.content = content;
-        this.data.lastUpdate = Date.now();
-        await this.persistData();
-        console.log('🔄 Conteúdo atualizado');
     }
 };
 
@@ -142,9 +104,9 @@ async function startServer() {
         console.log('🚀 Server initialization complete');
 
         // Screen data endpoint
-        app.get('/screen-data', (req, res) => {
+        app.get('/screen-data', async (req, res) => {
             try {
-                const data = ScreenManager.getData();
+                const data = await ScreenManager.getData();
                 console.log('📱 Enviando dados da tela:', data);
                 res.json(data);
             } catch (error) {
@@ -154,9 +116,9 @@ async function startServer() {
         });
 
         // Connection status endpoint
-        app.get('/connection-status', (req, res) => {
+        app.get('/connection-status', async (req, res) => {
             try {
-                const data = ScreenManager.getData();
+                const data = await ScreenManager.getData();
                 console.log('📡 Enviando status:', data);
                 res.json({
                     registered: data.registered,

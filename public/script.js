@@ -58,12 +58,21 @@ async function initialize() {
 
 // Simplificar verificação de status
 async function checkConnectionStatus() {
-    console.log('=== Verificando Status ===');
+    console.log('📡 Verificando status de conexão...');
     try {
         const response = await fetch('/connection-status');
         const data = await response.json();
         console.log('📡 Status:', data);
-        updateConnectionStatus(data);
+
+        if (data.registered) {
+            console.log('✅ Tela já registrada, mostrando apresentação');
+            showPresentationSection();
+            updateConnectionStatus(data);
+        } else {
+            console.log('ℹ️ Tela não registrada, mostrando registro');
+            const screenData = await getScreenData();
+            showRegistrationSection(screenData);
+        }
     } catch (error) {
         console.error('❌ Erro ao verificar status:', error);
         showConnectionError();
@@ -174,15 +183,29 @@ function initSSE() {
         eventSource.onopen = () => {
             console.log('✅ SSE conectado ao master');
             reconnectAttempts = 0;
+            checkConnectionStatus(); // Verificar status ao conectar
         };
 
-        eventSource.onmessage = (event) => {
+        eventSource.onmessage = async (event) => {
             try {
                 const data = JSON.parse(event.data);
                 console.log('📨 Mensagem SSE recebida:', data);
 
-                if (data.type === 'screen_update') {
-                    handleRegistrationUpdate(data);
+                // Verificar se a mensagem é para esta tela
+                const screenData = await getScreenData();
+                if (data.type === 'screen_update' && (!data.screenId || data.screenId === screenData.screenId)) {
+                    console.log('✨ Atualizando estado da tela:', data);
+                    
+                    if (data.registered) {
+                        console.log('🎉 Tela registrada, mudando para modo de apresentação');
+                        showPresentationSection();
+                        if (data.content) {
+                            currentContent = Array.isArray(data.content) ? data.content : [data.content];
+                            currentIndex = 0;
+                            showSlide();
+                        }
+                        updateConnectionStatus({ registered: true, masterUrl: data.masterUrl });
+                    }
                 }
             } catch (error) {
                 console.error('❌ Erro ao processar mensagem SSE:', error);
@@ -196,7 +219,7 @@ function initSSE() {
             if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
                 reconnectAttempts++;
                 const delay = RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
-                console.log(`🔄 Tentativa ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} - Reconectando em ${delay}ms`);
+                console.log(`🔄 Reconectando em ${delay}ms (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
                 setTimeout(initSSE, delay);
             } else {
                 console.error('❌ Máximo de tentativas atingido');

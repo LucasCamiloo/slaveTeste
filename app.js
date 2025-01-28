@@ -44,23 +44,27 @@ const screenCache = {
 // Função para verificar e atualizar cache
 async function getScreenData() {
     try {
-        // Primeiro tentar usar dados em memória
+        console.log('=== getScreenData START ===');
+        console.log('Current screenData:', screenData);
+
         if (screenData?.pin && screenData?.screenId) {
-            console.log('Usando dados em memória:', screenData);
+            console.log('✅ Usando dados em memória existentes:', { 
+                pin: screenData.pin, 
+                screenId: screenData.screenId 
+            });
             return screenData;
         }
 
-        console.log('Buscando dados no banco...');
-        
-        // Fazer uma busca mais específica no banco
+        console.log('🔍 Buscando dados no banco...');
         const existingScreen = await Screen.findOne({})
             .sort({ _id: -1 })
             .select('pin id registered content lastUpdate masterUrl')
             .lean();
 
-        console.log('Resultado da busca no banco:', existingScreen);
+        console.log('📄 Resultado da busca:', existingScreen);
 
         if (existingScreen?.pin && existingScreen?.id) {
+            console.log('✅ Dados encontrados no banco, atualizando memória');
             screenData = {
                 pin: existingScreen.pin,
                 screenId: existingScreen.id,
@@ -69,35 +73,48 @@ async function getScreenData() {
                 lastUpdate: existingScreen.lastUpdate || Date.now(),
                 masterUrl: existingScreen.masterUrl || MASTER_URL
             };
-            console.log('Dados recuperados do banco:', screenData);
             return screenData;
         }
 
-        // If none found, generate on the slave
-        console.log('Nenhum dado encontrado no banco, gerando PIN e ID na própria slave...');
+        // Adicionar verificação extra antes de gerar novos dados
+        console.log('⚠️ Nenhum dado encontrado, verificando novamente...');
+        const doubleCheck = await Screen.countDocuments();
+        console.log(`📊 Total de registros no banco: ${doubleCheck}`);
+        
+        if (doubleCheck > 0) {
+            console.error('❌ ERRO: Registros existem mas não foram encontrados!');
+            throw new Error('Inconsistência na busca de dados');
+        }
+
+        console.log('🆕 Gerando novos dados...');
         const newPin = generateRandomString(4).toUpperCase();
         const newScreenId = generateRandomString(8);
 
+        console.log('💾 Salvando novos dados no banco...', { newPin, newScreenId });
         const newRecord = await Screen.create({
             pin: newPin,
             id: newScreenId,
             registered: false,
             content: null,
             lastUpdate: new Date(),
-            masterUrl: MASTER_URL
+            masterUrl: null
         });
 
+        console.log('✅ Dados salvos com sucesso:', newRecord);
         screenData = {
             pin: newPin,
             screenId: newScreenId,
             registered: false,
             content: null,
             lastUpdate: newRecord.lastUpdate,
-            masterUrl: MASTER_URL
+            masterUrl: null
         };
+
+        console.log('=== getScreenData END ===');
         return screenData;
     } catch (error) {
-        console.error('Erro ao buscar dados da tela:', error);
+        console.error('❌ ERRO em getScreenData:', error);
+        console.error('Stack:', error.stack);
         return screenData || null;
     }
 }
@@ -107,15 +124,26 @@ let isInitialized = false;
 
 // If no data is found, do nothing; master is responsible for creating screens
 async function initializeScreenData() {
+    console.log('=== initializeScreenData START ===');
+    console.log('isInitialized:', isInitialized);
+    console.log('Current screenData:', screenData);
+
     if (isInitialized) {
-        console.log('Screen data already initialized.');
+        console.log('✅ Já inicializado, retornando dados existentes');
         return screenData;
     }
-    console.log('Iniciando inicialização dos dados...');
-    screenData = await getScreenData(); 
-    console.log('Dados obtidos ou gerados:', screenData);
-    isInitialized = true;
-    return screenData;
+
+    try {
+        screenData = await getScreenData();
+        console.log('📱 Dados obtidos:', screenData);
+        isInitialized = true;
+        console.log('=== initializeScreenData END ===');
+        return screenData;
+    } catch (error) {
+        console.error('❌ ERRO em initializeScreenData:', error);
+        console.error('Stack:', error.stack);
+        throw error;
+    }
 }
 
 // Inicialização do app
@@ -131,10 +159,13 @@ async function startServer() {
 
         // Configurar rotas
         app.get('/screen-data', async (req, res) => {
+            console.log('=== /screen-data REQUEST ===');
             try {
-                // Usar apenas getScreenData para evitar reinicialização
                 const data = await getScreenData();
+                console.log('📤 Enviando dados:', data);
+                
                 if (!data) {
+                    console.error('❌ Nenhum dado disponível');
                     throw new Error('Dados da tela não encontrados');
                 }
 
@@ -145,10 +176,10 @@ async function startServer() {
                     masterUrl: data.masterUrl || MASTER_URL
                 };
 
-                console.log('Enviando dados da tela:', responseData);
+                console.log('✅ Resposta enviada:', responseData);
                 res.json(responseData);
             } catch (error) {
-                console.error('Erro ao enviar dados da tela:', error);
+                console.error('❌ ERRO em /screen-data:', error);
                 res.status(500).json({
                     success: false,
                     message: 'Erro ao recuperar dados da tela'

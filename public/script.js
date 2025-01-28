@@ -45,15 +45,15 @@ function generateDeviceId() {
     return newId;
 }
 
-// Ensure PIN and ID are not changed on SSE timeouts by relying on server-side initialization
+// Remove any code that tries to register automatically if no pin or screenId is found
 async function initialize() {
     try {
         const screenData = await getScreenData();
         console.log('Dados da tela recebidos:', screenData);
 
+        // If screenData is null or missing keys, just show a warning and avoid re-initializing
         if (!screenData || !screenData.pin || !screenData.screenId) {
-            console.error('Dados da tela inválidos ou incompletos:', screenData);
-            showConnectionError();
+            console.warn('Nenhum PIN/ID encontrado - aguardando registro via master...');
             return;
         }
 
@@ -67,6 +67,7 @@ async function initialize() {
             showRegistrationSection(screenData);
         }
 
+        // Start SSE, but do NOT trigger any auto-registration
         initSSE();
     } catch (error) {
         console.error('Erro de inicialização:', error);

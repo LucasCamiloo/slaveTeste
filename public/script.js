@@ -162,48 +162,88 @@ function handleListContent(container) {
 
 // Melhorar manipulação de SSE
 function initSSE() {
+    console.log('🔄 Iniciando SSE...');
     if (eventSource) {
-        console.log('🔄 Fechando SSE existente');
+        console.log('Fechando conexão SSE existente');
         eventSource.close();
     }
 
-    console.log('🔄 Iniciando nova conexão SSE');
-    eventSource = new EventSource('/events');
+    try {
+        eventSource = new EventSource(`${MASTER_URL}/events`);
 
-    eventSource.onopen = () => {
-        console.log('✅ SSE conectado');
-        reconnectAttempts = 0;
-    };
+        eventSource.onopen = () => {
+            console.log('✅ SSE conectado ao master');
+            reconnectAttempts = 0;
+        };
 
-    eventSource.onmessage = (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            console.log('📨 Mensagem SSE:', data);
-            
-            if (data.type === 'connected') {
-                handleConnectionStatus(data);
-            } else if (data.type === 'screen_update') {
-                handleRegistrationUpdate(data);
+        eventSource.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                console.log('📨 Mensagem SSE recebida:', data);
+
+                if (data.type === 'screen_update') {
+                    handleRegistrationUpdate(data);
+                }
+            } catch (error) {
+                console.error('❌ Erro ao processar mensagem SSE:', error);
             }
-        } catch (error) {
-            console.error('❌ Erro ao processar mensagem SSE:', error);
-        }
-    };
+        };
 
-    eventSource.onerror = (error) => {
-        console.error('❌ Erro SSE:', error);
-        eventSource.close();
-        
-        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-            reconnectAttempts++;
-            const delay = RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
-            console.log(`🔄 Reconectando em ${delay}ms (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
-            setTimeout(initSSE, delay);
-        } else {
-            console.error('❌ Máximo de tentativas atingido');
-            showConnectionError();
+        eventSource.onerror = (error) => {
+            console.error('❌ Erro SSE:', error);
+            eventSource.close();
+
+            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                reconnectAttempts++;
+                const delay = RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
+                console.log(`🔄 Tentativa ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} - Reconectando em ${delay}ms`);
+                setTimeout(initSSE, delay);
+            } else {
+                console.error('❌ Máximo de tentativas atingido');
+                showConnectionError();
+            }
+        };
+    } catch (error) {
+        console.error('❌ Erro ao iniciar SSE:', error);
+        showConnectionError();
+    }
+}
+
+async function registerScreen() {
+    try {
+        const screenData = await getScreenData();
+        const { pin, screenId } = screenData;
+
+        console.log('📝 Tentando registrar tela:', { pin, screenId });
+
+        const response = await fetch(`${MASTER_URL}/register`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                pin,
+                screenId,
+                slaveUrl: SLAVE_URL
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Falha no registro');
         }
-    };
+
+        const data = await response.json();
+        console.log('✅ Registro bem sucedido:', data);
+
+        if (data.success) {
+            showPresentationSection();
+            startPresentation();
+        }
+    } catch (error) {
+        console.error('❌ Erro no registro:', error);
+        showConnectionError();
+    }
 }
 
 // ...rest of existing code...

@@ -103,13 +103,19 @@ async function startServer() {
 
         // Connection status endpoint
         app.get('/connection-status', (req, res) => {
-            const data = ScreenManager.getData();
-            res.json({
-                registered: data.registered,
-                screenId: data.screenId,
-                masterUrl: data.masterUrl,
-                lastUpdate: data.lastUpdate
-            });
+            try {
+                const data = ScreenManager.getData();
+                // Ensure we always return the same screenId
+                res.json({
+                    registered: data.registered,
+                    screenId: data.screenId, // Use the stored screenId
+                    masterUrl: data.masterUrl,
+                    lastUpdate: data.lastUpdate
+                });
+            } catch (error) {
+                console.error('Error getting connection status:', error);
+                res.status(500).json({ error: 'Internal server error' });
+            }
         });
 
         // Registro - apenas atualiza status em memória

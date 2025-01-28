@@ -53,38 +53,29 @@ function showWaitingScreen() {
 
 function showSlide() {
     if (!currentContent || currentContent.length === 0) {
-        console.log('ℹ️ Nenhum conteúdo para exibir');
         showWaitingScreen();
         return;
     }
 
-    console.log('🎬 Exibindo slide:', { index: currentIndex, total: currentContent.length });
-    
     const slideContent = document.getElementById('slideContent');
-    if (!slideContent) {
-        console.error('❌ Elemento slideContent não encontrado');
-        return;
-    }
+    if (!slideContent) return;
 
-    // Clear current content
+    // Limpar conteúdo existente
     slideContent.innerHTML = '';
 
-    // Show current slide
+    // Mostrar slide atual
     const content = currentContent[currentIndex];
     slideContent.innerHTML = content;
-    
-    // Process special content
+
+    // Lidar com conteúdo especial (como listas ou vídeos)
     handleSpecialContent(slideContent);
 
-    // Schedule next slide if we have multiple slides
+    // Agendar próximo slide
     if (currentContent.length > 1) {
-        if (window.slideTimeout) {
-            clearTimeout(window.slideTimeout);
-        }
-        window.slideTimeout = setTimeout(() => {
+        setTimeout(() => {
             currentIndex = (currentIndex + 1) % currentContent.length;
             showSlide();
-        }, 10000); // 10 seconds per slide
+        }, 10000); // 10 segundos por slide
     }
 }
 
@@ -356,19 +347,21 @@ function initSSE() {
 
                 const screenData = await getScreenData();
                 
+                // Processar apenas mensagens para esta tela
                 if (data.screenId === screenData.screenId) {
                     console.log('✨ Processando mensagem para esta tela');
-                    
-                    if (data.type === 'screen_update') {
-                        if (data.action === 'content_update') {
-                            console.log('🔄 Atualizando conteúdo');
+                    if (data.type === 'screen_update' && data.registered) {
+                        console.log('🎉 Tela registrada no master, iniciando apresentação');
+                        showPresentationSection();
+                        updateConnectionStatus({
+                            registered: true,
+                            masterUrl: data.masterUrl
+                        });
+
+                        if (data.content) {
                             currentContent = Array.isArray(data.content) ? data.content : [data.content];
                             currentIndex = 0;
                             showSlide();
-                        } else if (data.registered) {
-                            console.log('🎉 Tela registrada no master');
-                            showPresentationSection();
-                            startPresentation();
                         }
                     }
                 }

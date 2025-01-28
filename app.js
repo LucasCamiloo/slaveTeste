@@ -73,8 +73,29 @@ async function getScreenData() {
             return screenData;
         }
 
-        console.log('Nenhum dado encontrado no banco');
-        return null;
+        // If none found, generate on the slave
+        console.log('Nenhum dado encontrado no banco, gerando PIN e ID na própria slave...');
+        const newPin = generateRandomString(4).toUpperCase();
+        const newScreenId = generateRandomString(8);
+
+        const newRecord = await Screen.create({
+            pin: newPin,
+            id: newScreenId,
+            registered: false,
+            content: null,
+            lastUpdate: new Date(),
+            masterUrl: MASTER_URL
+        });
+
+        screenData = {
+            pin: newPin,
+            screenId: newScreenId,
+            registered: false,
+            content: null,
+            lastUpdate: newRecord.lastUpdate,
+            masterUrl: MASTER_URL
+        };
+        return screenData;
     } catch (error) {
         console.error('Erro ao buscar dados da tela:', error);
         return screenData || null;
@@ -84,26 +105,15 @@ async function getScreenData() {
 // Ensure initializeScreenData is called only once during server startup
 let isInitialized = false;
 
-// Modify initializeScreenData to NOT create new data if none is found
+// If no data is found, do nothing; master is responsible for creating screens
 async function initializeScreenData() {
     if (isInitialized) {
         console.log('Screen data already initialized.');
         return screenData;
     }
-
     console.log('Iniciando inicialização dos dados...');
-    
-    // Just load existing data without generating new PIN or ID
-    const existingData = await getScreenData();
-    if (existingData?.pin && existingData?.screenId) {
-        console.log('Usando dados existentes:', existingData);
-        screenData = existingData;
-    } else {
-        // If no data, do nothing
-        console.log('Nenhum dado encontrado. Aguardando registro via master...');
-        screenData = null;
-    }
-
+    screenData = await getScreenData(); 
+    console.log('Dados obtidos ou gerados:', screenData);
     isInitialized = true;
     return screenData;
 }

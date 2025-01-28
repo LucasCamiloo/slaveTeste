@@ -189,4 +189,51 @@ function handleListContent(container) {
     rotateListItem();
 }
 
+function initSSE() {
+    if (eventSource) {
+        console.log('Fechando conexão SSE existente');
+        eventSource.close();
+    }
+
+    console.log('Iniciando nova conexão SSE');
+    eventSource = new EventSource('/events');
+
+    eventSource.onopen = function() {
+        console.log('SSE: Conexão estabelecida');
+        reconnectAttempts = 0;
+        
+        // Não reinicializar dados aqui, apenas verificar status
+        checkConnectionStatus();
+    };
+
+    eventSource.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+            console.log('SSE: Mensagem recebida:', data);
+
+            if (data.type === 'connected') {
+                handleConnectionStatus(data);
+            } else if (data.type === 'screen_update') {
+                handleRegistrationUpdate(data);
+            }
+        } catch (error) {
+            console.error('SSE: Erro ao processar mensagem:', error);
+        }
+    };
+
+    eventSource.onerror = function(error) {
+        console.error('SSE: Erro na conexão:', error);
+        eventSource.close();
+        
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttempts++;
+            console.log(`SSE: Tentativa de reconexão ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`);
+            setTimeout(initSSE, RECONNECT_DELAY * reconnectAttempts);
+        } else {
+            console.error('SSE: Máximo de tentativas de reconexão atingido');
+            showConnectionError();
+        }
+    };
+}
+
 // ...rest of existing code...

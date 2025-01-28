@@ -85,34 +85,39 @@ async function initialize() {
     }
 }
 
-// Simplificar verificação de status
+// Update checkConnectionStatus to verify registration with master
 async function checkConnectionStatus() {
-    console.log('📡 Verificando status de conexão...');
     try {
+        // Get local screen data first
         const screenData = await getScreenData();
         if (!screenData) {
             throw new Error('No screen data available');
         }
 
-        const response = await fetch('/connection-status');
-        const status = await response.json();
+        // Check if this screen is registered with master
+        const response = await fetch(`${MASTER_URL}/screens`);
+        const { screens } = await response.json();
+        
+        // Find if this screen is registered in master's screen list
+        const registeredScreen = screens.find(screen => 
+            screen.id === screenData.screenId && 
+            screen.registered === true
+        );
 
-        // Only process if IDs match
-        if (status.screenId === screenData.screenId) {
-            console.log('📡 Status:', status);
-            updateConnectionStatus(status);
-
-            if (status.registered && status.masterUrl) {
-                showPresentationSection();
-            }
-        } else {
-            console.warn('⚠️ Ignoring status update - ID mismatch:', {
-                cached: screenData.screenId,
-                received: status.screenId
+        if (registeredScreen) {
+            console.log('✅ Tela encontrada no master:', registeredScreen);
+            showPresentationSection();
+            updateConnectionStatus({
+                registered: true,
+                masterUrl: MASTER_URL
             });
+        } else {
+            console.log('ℹ️ Tela não registrada no master');
+            showRegistrationSection(screenData);
         }
     } catch (error) {
         console.error('❌ Error checking status:', error);
+        showConnectionError();
     }
 }
 
@@ -216,7 +221,7 @@ function handleListContent(container) {
     rotateListItem();
 }
 
-// Melhorar manipulação de SSE
+// Update SSE handling to properly handle registration events
 function initSSE() {
     console.log('🔄 Iniciando SSE...');
     if (eventSource) {
@@ -230,7 +235,7 @@ function initSSE() {
         eventSource.onopen = () => {
             console.log('✅ SSE conectado ao master');
             reconnectAttempts = 0;
-            checkConnectionStatus(); // Verificar status ao conectar
+            checkConnectionStatus();
         };
 
         eventSource.onmessage = async (event) => {
@@ -238,20 +243,24 @@ function initSSE() {
                 const data = JSON.parse(event.data);
                 console.log('📨 Mensagem SSE recebida:', data);
 
-                // Verificar se a mensagem é para esta tela
                 const screenData = await getScreenData();
-                if (data.type === 'screen_update' && (!data.screenId || data.screenId === screenData.screenId)) {
-                    console.log('✨ Atualizando estado da tela:', data);
-                    
-                    if (data.registered) {
-                        console.log('🎉 Tela registrada, mudando para modo de apresentação');
+                
+                // Only process messages for this screen
+                if (data.screenId === screenData.screenId) {
+                    console.log('✨ Processando mensagem para esta tela');
+                    if (data.type === 'screen_update' && data.registered) {
+                        console.log('🎉 Tela registrada no master, iniciando apresentação');
                         showPresentationSection();
+                        updateConnectionStatus({
+                            registered: true,
+                            masterUrl: data.masterUrl
+                        });
+
                         if (data.content) {
                             currentContent = Array.isArray(data.content) ? data.content : [data.content];
                             currentIndex = 0;
                             showSlide();
                         }
-                        updateConnectionStatus({ registered: true, masterUrl: data.masterUrl });
                     }
                 }
             } catch (error) {

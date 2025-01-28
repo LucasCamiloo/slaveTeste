@@ -161,6 +161,7 @@ async function startServer() {
                 console.log('📝 Recebendo registro:', { pin, screenId, masterUrl });
 
                 const data = ScreenManager.getData();
+                console.log('📝 Dados atuais:', data);
                 
                 if (pin !== data.pin || screenId !== data.screenId) {
                     console.error('❌ Dados inválidos:', { expected: data, received: { pin, screenId } });
@@ -174,22 +175,30 @@ async function startServer() {
                 ScreenManager.updateRegistrationStatus(true, masterUrl);
                 console.log('✅ Tela registrada:', ScreenManager.getData());
 
-                // Enviar resposta de sucesso
-                res.json({ 
-                    success: true, 
-                    message: 'Registration successful',
-                    screenId: screenId,
-                    registered: true
-                });
-
                 // Notificar clientes SSE sobre a mudança
                 const sseData = {
                     type: 'screen_update',
                     screenId: screenId,
                     registered: true,
-                    masterUrl: masterUrl
+                    masterUrl: masterUrl,
+                    action: 'registration'
                 };
-                notifyClients(sseData);
+
+                try {
+                    notifyClients(sseData);
+                    console.log('✅ Clientes SSE notificados');
+                } catch (err) {
+                    console.error('❌ Erro ao notificar clientes:', err);
+                }
+
+                // Enviar resposta de sucesso
+                res.json({ 
+                    success: true, 
+                    message: 'Registration successful',
+                    screenId: screenId,
+                    registered: true,
+                    masterUrl: masterUrl
+                });
 
             } catch (error) {
                 console.error('❌ Erro no registro:', error);

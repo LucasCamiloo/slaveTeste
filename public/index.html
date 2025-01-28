@@ -401,26 +401,88 @@
     <div id="displayArea" style="display: none;"></div>
 
     <script>
-        // Remover variáveis globais duplicadas
+        // Constantes globais
         const MASTER_URL = 'https://master-teste.vercel.app';
         const SLAVE_URL = 'https://slave-teste.vercel.app';
-
-        let currentContent = null;
-        let currentIndex = 0;
-        let statusTimeout;
-        let eventSource = null;
-        let reconnectAttempts = 0;
-        const MAX_RECONNECT_ATTEMPTS = 5;
-        const RECONNECT_DELAY = 3000;
-
-        // Estado local da aplicação
+        
+        // Estado da aplicação
         const appState = {
+            currentContent: null,
+            currentIndex: 0,
+            statusTimeout: null,
+            eventSource: null,
+            reconnectAttempts: 0,
+            MAX_RECONNECT_ATTEMPTS: 5,
+            RECONNECT_DELAY: 3000,
             isTransitioning: false,
-            slideTimeout: null,
-            currentListIndex: 0
+            slideTimeout: null
         };
 
-        // Remover funções duplicadas - usar apenas as versões mais recentes
+        // Funções auxiliares
+        async function getScreenData() {
+            try {
+                const response = await fetch('/screen-data');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                console.log('📱 Dados recebidos:', data);
+                return data;
+            } catch (error) {
+                console.error('❌ Erro ao buscar dados:', error);
+                throw error;
+            }
+        }
+
+        function showConnectionError() {
+            const statusElement = document.getElementById('connectionStatus');
+            if (statusElement) {
+                statusElement.textContent = 'Erro de conexão';
+                statusElement.classList.add('disconnected');
+                statusElement.classList.remove('connected', 'hidden');
+            }
+            console.error('Erro de conexão com o servidor');
+        }
+
+        function showPresentationSection() {
+            document.getElementById('registrationSection').classList.add('hidden');
+            document.getElementById('presentationSection').classList.add('visible');
+        }
+
+        function updateConnectionStatus(data) {
+            const statusElement = document.getElementById('connectionStatus');
+            if (!statusElement) return;
+            
+            if (data.registered) {
+                statusElement.textContent = `Conectado ao Master (${data.masterUrl || 'Unknown'})`;
+                statusElement.classList.add('connected');
+                statusElement.classList.remove('disconnected');
+            } else {
+                statusElement.textContent = 'Aguardando conexão...';
+                statusElement.classList.remove('connected');
+                statusElement.classList.add('disconnected');
+            }
+        }
+
+        function showRegistrationSection(data) {
+            if (!data?.pin || !data?.screenId) {
+                console.error('Dados inválidos para registro:', data);
+                return;
+            }
+
+            const registrationSection = document.getElementById('registrationSection');
+            const presentationSection = document.getElementById('presentationSection');
+            
+            if (registrationSection && presentationSection) {
+                registrationSection.classList.remove('hidden');
+                presentationSection.classList.remove('visible');
+                
+                document.getElementById('pin').textContent = data.pin;
+                document.getElementById('screenId').textContent = data.screenId;
+            }
+        }
+
+        // Função de inicialização principal
         async function initialize() {
             console.log('=== Inicializando Frontend ===');
             try {
@@ -443,7 +505,7 @@
             }
         }
 
-        // Única chamada de inicialização
+        // Iniciar aplicação quando o DOM estiver pronto
         document.addEventListener('DOMContentLoaded', initialize);
 
         // Helper functions

@@ -43,8 +43,7 @@ const screenCache = {
 
 // Função para verificar e atualizar cache
 async function getScreenData() {
-    const now = Date.now();
-    if (screenCache.data && (now - screenCache.lastUpdate) < screenCache.ttl) {
+    if (screenCache.data) {
         return screenCache.data;
     }
 
@@ -53,7 +52,7 @@ async function getScreenData() {
         .lean();
     
     screenCache.data = screen;
-    screenCache.lastUpdate = now;
+    screenCache.lastUpdate = Date.now();
     return screen;
 }
 
@@ -111,28 +110,20 @@ async function initializeScreenData() {
             return screenData;
         }
 
-        // Se não existir ou estiver incompleto, gerar novos códigos
+        // Se não existir, gerar novos códigos uma única vez
         const { pin, screenId } = await generateUniqueCode();
         const newScreenData = {
             pin,
-            id: screenId, // Note que usamos 'id' aqui para o banco
-            screenId, // E 'screenId' para o objeto em memória
+            id: screenId,
+            screenId,
             registered: false,
             content: null,
             lastUpdate: Date.now(),
             masterUrl: MASTER_URL
         };
 
-        // Se já existe um registro, atualizar
-        if (existingScreen) {
-            await Screen.findByIdAndUpdate(existingScreen._id, {
-                pin: pin,
-                id: screenId,
-            });
-        } else {
-            // Se não existe, criar novo
-            await Screen.create(newScreenData);
-        }
+        // Criar novo registro no banco
+        await Screen.create(newScreenData);
 
         screenData = newScreenData;
         console.log('Novos dados da tela gerados:', screenData);
@@ -157,12 +148,11 @@ async function startServer() {
         // Configurar rotas
         app.get('/screen-data', async (req, res) => {
             try {
-                // Garantir que temos dados válidos
-                if (!screenData || !screenData.pin || !screenData.screenId) {
+                // Não reinicializar, apenas garantir que temos dados
+                if (!screenData) {
                     screenData = await initializeScreenData();
                 }
 
-                // Garantir que todos os campos necessários estão presentes
                 const responseData = {
                     pin: screenData.pin,
                     screenId: screenData.screenId,

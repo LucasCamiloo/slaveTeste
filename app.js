@@ -116,22 +116,56 @@ async function startServer() {
         app.post('/register', (req, res) => {
             try {
                 const { pin, screenId, masterUrl } = req.body;
-                const data = ScreenManager.getData();
+                console.log('📝 Recebendo registro:', { pin, screenId, masterUrl });
 
+                const data = ScreenManager.getData();
+                
                 if (pin !== data.pin || screenId !== data.screenId) {
+                    console.error('❌ Dados inválidos:', { expected: data, received: { pin, screenId } });
                     return res.status(400).json({
                         success: false,
                         message: 'Invalid credentials'
                     });
                 }
 
+                // Atualizar status de registro
                 ScreenManager.updateRegistrationStatus(true, masterUrl);
-                res.json({ success: true, message: 'Registration successful' });
+                console.log('✅ Tela registrada:', ScreenManager.getData());
+
+                // Enviar resposta de sucesso
+                res.json({ 
+                    success: true, 
+                    message: 'Registration successful',
+                    screenId: screenId,
+                    registered: true
+                });
+
+                // Notificar clientes SSE sobre a mudança
+                const sseData = {
+                    type: 'screen_update',
+                    screenId: screenId,
+                    registered: true,
+                    masterUrl: masterUrl
+                };
+                notifyClients(sseData);
+
             } catch (error) {
-                console.error('Registration error:', error);
+                console.error('❌ Erro no registro:', error);
                 res.status(500).json({ error: 'Internal server error' });
             }
         });
+
+        // Adicionar função para notificar clientes SSE
+        function notifyClients(data) {
+            const eventData = `data: ${JSON.stringify(data)}\n\n`;
+            [...clients].forEach(client => {
+                try {
+                    client.write(eventData);
+                } catch (err) {
+                    console.error('Erro ao notificar cliente:', err);
+                }
+            });
+        }
 
         // Unregister - apenas atualiza status em memória
         app.post('/unregister', (req, res) => {

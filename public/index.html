@@ -483,30 +483,50 @@
             }
         }
 
+        // Função para iniciar SSE com o MASTER, não com o slave
         function initSSE() {
-            console.log('🔄 Iniciando SSE...');
+            console.log('🔄 Iniciando SSE com o master...');
             if (appState.eventSource) {
                 console.log('Fechando conexão SSE existente');
                 appState.eventSource.close();
             }
 
             try {
-                appState.eventSource = new EventSource('/events');
+                // Conectar ao SSE do master, não do slave
+                appState.eventSource = new EventSource(`${MASTER_URL}/events`);
 
                 appState.eventSource.onopen = () => {
-                    console.log('✅ SSE conectado');
+                    console.log('✅ SSE conectado ao master');
                     appState.reconnectAttempts = 0;
+                    checkConnectionStatus(); // Verificar status ao conectar
                 };
 
-                appState.eventSource.onmessage = (event) => {
+                appState.eventSource.onmessage = async (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        console.log('📨 Mensagem SSE:', data);
+                        console.log('📨 Mensagem do master:', data);
                         
-                        if (data.registered) {
-                            appState.registered = true;
-                            showPresentationSection();
-                            startPresentation();
+                        // Verificar se a mensagem é para esta tela
+                        const screenData = await getScreenData();
+                        if (data.screenId && data.screenId !== screenData.screenId) {
+                            console.log('Mensagem ignorada - destinada a outra tela');
+                            return;
+                        }
+
+                        if (data.type === 'screen_update') {
+                            console.log('Atualização de tela recebida:', data);
+                            if (data.registered) {
+                                showPresentationSection();
+                                startPresentation();
+                                showSuccessMessage('Conexão estabelecida com sucesso!');
+                            }
+                            // Atualizar conteúdo se houver
+                            if (data.content) {
+                                appState.currentContent = Array.isArray(data.content) 
+                                    ? data.content 
+                                    : [data.content];
+                                showSlide();
+                            }
                         }
                     } catch (error) {
                         console.error('❌ Erro ao processar mensagem SSE:', error);
@@ -536,6 +556,7 @@
         async function initialize() {
             console.log('=== Inicializando Frontend ===');
             try {
+                // Buscar dados locais primeiro
                 const screenData = await getScreenData();
                 console.log('📱 Estado inicial:', screenData);
 
@@ -550,8 +571,7 @@
                 const statusData = await statusResponse.json();
                 console.log('📡 Status inicial:', statusData);
 
-                appState.registered = statusData.registered;
-
+                // Atualizar interface baseado no status
                 if (statusData.registered) {
                     console.log('✅ Tela registrada, iniciando apresentação');
                     showPresentationSection();
@@ -561,9 +581,10 @@
                     showRegistrationSection(screenData);
                 }
 
-                // Iniciar SSE após verificar status
+                // Iniciar SSE com o master
+                console.log('🔄 Iniciando conexão com o master...');
                 initSSE();
-                
+
                 // Verificar status periodicamente
                 setInterval(checkConnectionStatus, 5000);
             } catch (error) {

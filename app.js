@@ -63,52 +63,13 @@ async function getScreenData() {
     return null;
 }
 
-// Modificar a função isCodeUnique
-async function isCodeUnique(pin, screenId) {
-    const existingScreen = await Screen.findOne({
-        $or: [
-            { pin: pin },
-            { id: screenId }
-        ]
-    }).lean();
-    
-    console.log('Verificando uniquidade:', { pin, screenId, exists: !!existingScreen });
-    return !existingScreen;
-}
-
-// Modificar função para gerar códigos únicos
-async function generateUniqueCode() {
-    let attempts = 0;
-    const maxAttempts = 10;
-    
-    while (attempts < maxAttempts) {
-        const pin = generateRandomString(4);
-        const screenId = generateRandomString(8);
-        
-        console.log('Tentativa de gerar código:', { pin, screenId, tentativa: attempts + 1 });
-        
-        const isUnique = await isCodeUnique(pin, screenId);
-        if (isUnique) {
-            return { pin, screenId };
-        }
-        
-        attempts++;
-    }
-    
-    throw new Error('Não foi possível gerar um código único após várias tentativas');
-}
-
-// Modificar a função initializeScreenData para só gerar novos dados se realmente necessário
+// Modificar a função initializeScreenData para ser totalmente independente
 async function initializeScreenData() {
     try {
-        // Verificar se já temos dados em memória
-        if (screenData && screenData.pin && screenData.screenId) {
-            return screenData;
-        }
-
-        // Tentar recuperar dados existentes do banco
+        // Primeiro, verificar se já existe um registro no banco de dados
         const existingScreen = await Screen.findOne({}).lean();
         
+        // Se existir e tiver dados válidos, usar estes dados
         if (existingScreen && existingScreen.pin && existingScreen.id) {
             screenData = {
                 pin: existingScreen.pin,
@@ -118,11 +79,14 @@ async function initializeScreenData() {
                 lastUpdate: existingScreen.lastUpdate || Date.now(),
                 masterUrl: existingScreen.masterUrl || MASTER_URL
             };
+            console.log('Usando dados existentes da tela:', screenData);
             return screenData;
         }
 
-        // Se não existir nenhum dado, só então gerar novos códigos
-        const { pin, screenId } = await generateUniqueCode();
+        // Se não existir, gerar novos dados localmente
+        const pin = generateRandomString(4).toUpperCase(); // PIN mais legível
+        const screenId = generateRandomString(8);
+        
         const newScreenData = {
             pin,
             id: screenId,
@@ -130,13 +94,14 @@ async function initializeScreenData() {
             registered: false,
             content: null,
             lastUpdate: Date.now(),
-            masterUrl: MASTER_URL
+            masterUrl: null // Será definido apenas quando registrado
         };
 
-        // Criar novo registro no banco
+        // Salvar no banco de dados
         await Screen.create(newScreenData);
-        screenData = newScreenData;
         
+        screenData = newScreenData;
+        console.log('Novos dados da tela gerados:', screenData);
         return screenData;
     } catch (error) {
         console.error('Erro ao inicializar dados da tela:', error);
@@ -212,7 +177,7 @@ async function startServer() {
             });
         });
 
-        // Atualizar rota de registro
+        // Modificar a rota de registro para ser mais simples
         app.post('/register', async (req, res) => {
             try {
                 const { pin, screenId, masterUrl } = req.body;
@@ -226,7 +191,7 @@ async function startServer() {
                     });
                 }
 
-                // Validate credentials
+                // Validar apenas com os dados locais
                 if (pin !== screenData.pin || screenId !== screenData.screenId) {
                     console.log('Invalid credentials:', {
                         expectedPin: screenData.pin,
@@ -240,12 +205,18 @@ async function startServer() {
                     });
                 }
 
-                // Atualizar dados da tela no banco de dados
+                // Atualizar dados locais
                 screenData.registered = true;
                 screenData.masterUrl = masterUrl;
+
+                // Atualizar banco de dados
                 await Screen.findOneAndUpdate(
                     { id: screenId },
-                    { registered: true, masterUrl: masterUrl, lastUpdate: new Date() },
+                    { 
+                        registered: true, 
+                        masterUrl: masterUrl,
+                        lastUpdate: new Date()
+                    },
                     { new: true }
                 );
 

@@ -414,42 +414,47 @@
         const MAX_RECONNECT_ATTEMPTS = 5;
         const RECONNECT_DELAY = 3000;
 
-        function initSSE() {
+        async function initSSE() {
             if (eventSource) {
+                console.log('Fechando conexão SSE existente');
                 eventSource.close();
             }
 
-            eventSource = new EventSource(`${MASTER_URL}/events`);
+            console.log('Iniciando nova conexão SSE');
+            eventSource = new EventSource('/events');
 
             eventSource.onopen = function() {
-                console.log('SSE connection established');
+                console.log('SSE: Conexão estabelecida');
                 reconnectAttempts = 0;
+                checkConnectionStatus();
             };
 
             eventSource.onmessage = function(event) {
                 try {
                     const data = JSON.parse(event.data);
-                    console.log('SSE message received:', data);
+                    console.log('SSE: Mensagem recebida:', data);
 
                     if (data.type === 'connected') {
                         handleConnectionStatus(data);
-                    } else if (data.type === 'registration' || data.type === 'screen_update') {
+                    } else if (data.type === 'screen_update') {
                         handleRegistrationUpdate(data);
                     }
                 } catch (error) {
-                    console.error('Error processing SSE message:', error);
+                    console.error('SSE: Erro ao processar mensagem:', error);
                 }
             };
 
             eventSource.onerror = function(error) {
-                console.error('SSE error:', error);
+                console.error('SSE: Erro na conexão:', error);
                 eventSource.close();
                 
                 if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
                     reconnectAttempts++;
-                    setTimeout(initSSE, RECONNECT_DELAY * reconnectAttempts);
+                    const delay = RECONNECT_DELAY * Math.pow(2, reconnectAttempts); // Exponential backoff
+                    console.log(`SSE: Tentativa de reconexão ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} em ${delay}ms`);
+                    setTimeout(initSSE, delay);
                 } else {
-                    console.error('Max reconnection attempts reached');
+                    console.error('SSE: Máximo de tentativas de reconexão atingido');
                     showConnectionError();
                 }
             };

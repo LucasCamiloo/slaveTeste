@@ -34,9 +34,10 @@ function generateRandomString(length) {
 // Singleton para gerenciar dados da tela em memória
 const ScreenManager = {
     data: null,
+    initialized: false,
 
     initialize() {
-        if (this.data) return this.data;
+        if (this.initialized) return this.data;
 
         console.log('🔄 Gerando novos dados de tela...');
         const pin = generateRandomString(4).toUpperCase();
@@ -51,12 +52,16 @@ const ScreenManager = {
             masterUrl: null
         };
 
+        this.initialized = true;
         console.log('✅ Dados da tela gerados:', this.data);
         return this.data;
     },
 
     getData() {
-        return this.data || this.initialize();
+        if (!this.initialized) {
+            this.initialize();
+        }
+        return this.data;
     },
 
     updateRegistrationStatus(registered, masterUrl) {
@@ -171,12 +176,17 @@ async function startServer() {
                 res.setHeader('Connection', 'keep-alive');
                 res.setHeader('Access-Control-Allow-Origin', '*');
                 
-                const initialState = JSON.stringify({
+                // Enviar estado inicial mais detalhado
+                const initialState = {
                     type: 'connected',
-                    ...data
-                });
+                    registered: data.registered,
+                    screenId: data.screenId,
+                    pin: data.pin,
+                    masterUrl: data.masterUrl,
+                    lastUpdate: data.lastUpdate
+                };
                 
-                res.write(`data: ${initialState}\n\n`);
+                res.write(`data: ${JSON.stringify(initialState)}\n\n`);
                 
                 const keepAlive = setInterval(() => {
                     res.write(':keepalive\n\n');

@@ -18,12 +18,24 @@ const appState = {
     cacheTTL: 30000, // 30 seconds
 };
 
-// Update the caching function
+// Update the caching function to be more resilient
 async function cacheScreenData() {
     try {
         if (appState.screenData && Date.now() - appState.lastFetch < appState.cacheTTL) {
             console.log('📦 Using cached data:', appState.screenData);
             return appState.screenData;
+        }
+
+        // Try to get data from localStorage first
+        const storedData = localStorage.getItem('screenData');
+        if (storedData) {
+            const parsedData = JSON.parse(storedData);
+            if (parsedData.screenId && parsedData.pin) {
+                console.log('📦 Using stored data:', parsedData);
+                appState.screenData = parsedData;
+                appState.lastFetch = Date.now();
+                return parsedData;
+            }
         }
 
         const response = await fetch('/screen-data');
@@ -33,13 +45,20 @@ async function cacheScreenData() {
             throw new Error('Invalid screen data received');
         }
 
+        // Store in localStorage for persistence
+        localStorage.setItem('screenData', JSON.stringify(data));
         appState.screenData = data;
         appState.lastFetch = Date.now();
         console.log('🔄 Cache updated:', appState.screenData);
         return data;
     } catch (error) {
         console.error('❌ Cache update failed:', error);
-        return appState.screenData; // Return existing cache on error
+        // Try to use stored data as fallback
+        const storedData = localStorage.getItem('screenData');
+        if (storedData) {
+            return JSON.parse(storedData);
+        }
+        throw error;
     }
 }
 
@@ -60,14 +79,22 @@ function generateDeviceId() {
 
 // Remove any code that tries to register automatically if no pin or screenId is found
 // Adicionar logs no initialize do frontend
+// Update initialize to ensure consistent screen ID
 async function initialize() {
     console.log('=== Inicializando Frontend ===');
     try {
         const screenData = await getScreenData();
         console.log('📱 Estado inicial:', screenData);
 
-        // Store in appState
-        appState.screenData = screenData;
+        // Ensure we have valid screen data
+        if (!screenData || !screenData.screenId) {
+            console.error('❌ Invalid screen data');
+            showConnectionError();
+            return;
+        }
+
+        // Store in localStorage for persistence
+        localStorage.setItem('screenData', JSON.stringify(screenData));
 
         if (screenData.registered) {
             console.log('✅ Tela registrada, iniciando apresentação');
@@ -85,34 +112,35 @@ async function initialize() {
     }
 }
 
-// Update checkConnectionStatus to verify registration with master
+// Update checkConnectionStatus to handle ID verification better
 async function checkConnectionStatus() {
     try {
-        // Get local screen data first
         const screenData = await getScreenData();
-        if (!screenData) {
-            throw new Error('No screen data available');
+        if (!screenData || !screenData.screenId) {
+            throw new Error('No valid screen data available');
         }
 
-        // Check if this screen is registered with master
         const response = await fetch(`${MASTER_URL}/screens`);
         const { screens } = await response.json();
         
-        // Find if this screen is registered in master's screen list
-        const registeredScreen = screens.find(screen => 
-            screen.id === screenData.screenId && 
-            screen.registered === true
-        );
+        // Find this screen in master's list
+        const registeredScreen = screens.find(screen => screen.id === screenData.screenId);
 
-        if (registeredScreen) {
-            console.log('✅ Tela encontrada no master:', registeredScreen);
+        if (!registeredScreen) {
+            console.log('ℹ️ Screen not found in master, showing registration');
+            showRegistrationSection(screenData);
+            return;
+        }
+
+        if (registeredScreen.registered) {
+            console.log('✅ Screen verified in master:', registeredScreen);
             showPresentationSection();
             updateConnectionStatus({
                 registered: true,
                 masterUrl: MASTER_URL
             });
         } else {
-            console.log('ℹ️ Tela não registrada no master');
+            console.log('ℹ️ Screen found but not registered');
             showRegistrationSection(screenData);
         }
     } catch (error) {

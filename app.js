@@ -37,34 +37,25 @@ const ScreenManager = {
     data: null,
     initialized: false,
     storageKey: 'screenData',
+    storagePath: path.join(__dirname, 'screenData.json'),
 
     initialize() {
         if (this.initialized) return this.data;
 
-        // Tentar recuperar dados salvos
         try {
-            const savedData = fs.existsSync('./screenData.json') 
-                ? JSON.parse(fs.readFileSync('./screenData.json', 'utf8'))
-                : null;
-
-            if (savedData && savedData.pin && savedData.screenId) {
-                console.log('🔄 Recuperando dados salvos da tela...');
-                this.data = savedData;
-            } else {
-                console.log('🔄 Gerando novos dados de tela...');
-                this.data = {
-                    pin: generateRandomString(4).toUpperCase(),
-                    screenId: generateRandomString(8),
-                    registered: false,
-                    content: null,
-                    lastUpdate: Date.now(),
-                    masterUrl: null
-                };
-                // Salvar os novos dados
-                this.persistData();
+            // Tentar carregar dados existentes
+            if (fs.existsSync(this.storagePath)) {
+                const savedData = JSON.parse(fs.readFileSync(this.storagePath, 'utf8'));
+                if (savedData && savedData.pin && savedData.screenId) {
+                    console.log('🔄 Recuperando dados salvos:', savedData);
+                    this.data = savedData;
+                    this.initialized = true;
+                    return this.data;
+                }
             }
-        } catch (error) {
-            console.error('Erro ao inicializar dados:', error);
+
+            // Se não houver dados salvos, criar novos
+            console.log('🔄 Gerando novos dados...');
             this.data = {
                 pin: generateRandomString(4).toUpperCase(),
                 screenId: generateRandomString(8),
@@ -73,26 +64,31 @@ const ScreenManager = {
                 lastUpdate: Date.now(),
                 masterUrl: null
             };
-            this.persistData();
-        }
 
-        this.initialized = true;
-        console.log('✅ Dados da tela:', this.data);
-        return this.data;
+            this.persistData();
+            this.initialized = true;
+            console.log('✅ Novos dados gerados:', this.data);
+            return this.data;
+
+        } catch (error) {
+            console.error('❌ Erro ao inicializar dados:', error);
+            throw error;
+        }
     },
 
     persistData() {
         try {
-            fs.writeFileSync('./screenData.json', JSON.stringify(this.data), 'utf8');
+            fs.writeFileSync(this.storagePath, JSON.stringify(this.data, null, 2));
             console.log('💾 Dados persistidos com sucesso');
         } catch (error) {
-            console.error('Erro ao persistir dados:', error);
+            console.error('❌ Erro ao persistir dados:', error);
+            throw error;
         }
     },
 
     getData() {
         if (!this.initialized) {
-            this.initialize();
+            return this.initialize();
         }
         return this.data;
     },
@@ -128,28 +124,29 @@ async function startServer() {
 
         // Screen data endpoint
         app.get('/screen-data', (req, res) => {
-            const data = ScreenManager.getData();
-            res.json({
-                pin: data.pin,
-                screenId: data.screenId,
-                registered: data.registered,
-                masterUrl: data.masterUrl
-            });
+            try {
+                const data = ScreenManager.getData();
+                console.log('📱 Enviando dados da tela:', data);
+                res.json(data);
+            } catch (error) {
+                console.error('❌ Erro ao obter dados da tela:', error);
+                res.status(500).json({ error: 'Internal server error' });
+            }
         });
 
         // Connection status endpoint
         app.get('/connection-status', (req, res) => {
             try {
                 const data = ScreenManager.getData();
-                // Ensure we always return the same screenId
+                console.log('📡 Enviando status:', data);
                 res.json({
                     registered: data.registered,
-                    screenId: data.screenId, // Use the stored screenId
+                    screenId: data.screenId,
                     masterUrl: data.masterUrl,
                     lastUpdate: data.lastUpdate
                 });
             } catch (error) {
-                console.error('Error getting connection status:', error);
+                console.error('❌ Erro ao obter status:', error);
                 res.status(500).json({ error: 'Internal server error' });
             }
         });

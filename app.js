@@ -31,252 +31,200 @@ function generateRandomString(length) {
     return result;
 }
 
-// Mover a definição de screenData para após a conexão com o banco
-let screenData;
-
-// Modificar o cache para ter uma duração mais longa
-const screenCache = {
+// Singleton for screen data
+const ScreenManager = {
     data: null,
-    lastUpdate: 0,
-    ttl: 3600000 // 1 hora
+    initialized: false,
+
+    async initialize() {
+        if (this.initialized) return this.data;
+        
+        try {
+            console.log('🔄 Initializing ScreenManager...');
+            const existingScreen = await Screen.findOne({}).lean();
+            
+            if (existingScreen?.pin && existingScreen?.id) {
+                console.log('📱 Found existing screen data');
+                this.data = {
+                    pin: existingScreen.pin,
+                    screenId: existingScreen.id,
+                    registered: existingScreen.registered || false,
+                    content: existingScreen.content || null,
+                    lastUpdate: existingScreen.lastUpdate || Date.now(),
+                    masterUrl: existingScreen.masterUrl || null
+                };
+            } else {
+                console.log('🆕 Creating new screen data');
+                const pin = generateRandomString(4).toUpperCase();
+                const screenId = generateRandomString(8);
+                
+                const newScreen = await Screen.create({
+                    pin,
+                    id: screenId,
+                    registered: false,
+                    content: null,
+                    lastUpdate: Date.now(),
+                    masterUrl: null
+                });
+
+                this.data = {
+                    pin,
+                    screenId,
+                    registered: false,
+                    content: null,
+                    lastUpdate: newScreen.lastUpdate,
+                    masterUrl: null
+                };
+            }
+            
+            this.initialized = true;
+            console.log('✅ Screen data initialized:', this.data);
+            return this.data;
+        } catch (error) {
+            console.error('❌ Error initializing screen data:', error);
+            throw error;
+        }
+    },
+
+    getData() {
+        if (!this.initialized) {
+            throw new Error('ScreenManager not initialized');
+        }
+        return this.data;
+    },
+
+    async updateData(updates) {
+        try {
+            if (!this.initialized) throw new Error('ScreenManager not initialized');
+            
+            this.data = { ...this.data, ...updates };
+            await Screen.findOneAndUpdate(
+                { id: this.data.screenId },
+                updates,
+                { new: true }
+            );
+            
+            return this.data;
+        } catch (error) {
+            console.error('Error updating screen data:', error);
+            throw error;
+        }
+    }
 };
 
-// Função para verificar e atualizar cache
-async function getScreenData() {
-    try {
-        console.log('=== getScreenData START ===');
-        console.log('Current screenData:', screenData);
-
-        if (screenData?.pin && screenData?.screenId) {
-            console.log('✅ Usando dados em memória existentes:', { 
-                pin: screenData.pin, 
-                screenId: screenData.screenId 
-            });
-            return screenData;
-        }
-
-        console.log('🔍 Buscando dados no banco...');
-        const existingScreen = await Screen.findOne({})
-            .sort({ _id: -1 })
-            .select('pin id registered content lastUpdate masterUrl')
-            .lean();
-
-        console.log('📄 Resultado da busca:', existingScreen);
-
-        if (existingScreen?.pin && existingScreen?.id) {
-            console.log('✅ Dados encontrados no banco, atualizando memória');
-            screenData = {
-                pin: existingScreen.pin,
-                screenId: existingScreen.id,
-                registered: existingScreen.registered || false,
-                content: existingScreen.content || null,
-                lastUpdate: existingScreen.lastUpdate || Date.now(),
-                masterUrl: existingScreen.masterUrl || MASTER_URL
-            };
-            return screenData;
-        }
-
-        // Adicionar verificação extra antes de gerar novos dados
-        console.log('⚠️ Nenhum dado encontrado, verificando novamente...');
-        const doubleCheck = await Screen.countDocuments();
-        console.log(`📊 Total de registros no banco: ${doubleCheck}`);
-        
-        if (doubleCheck > 0) {
-            console.error('❌ ERRO: Registros existem mas não foram encontrados!');
-            throw new Error('Inconsistência na busca de dados');
-        }
-
-        console.log('🆕 Gerando novos dados...');
-        const newPin = generateRandomString(4).toUpperCase();
-        const newScreenId = generateRandomString(8);
-
-        console.log('💾 Salvando novos dados no banco...', { newPin, newScreenId });
-        const newRecord = await Screen.create({
-            pin: newPin,
-            id: newScreenId,
-            registered: false,
-            content: null,
-            lastUpdate: new Date(),
-            masterUrl: null
-        });
-
-        console.log('✅ Dados salvos com sucesso:', newRecord);
-        screenData = {
-            pin: newPin,
-            screenId: newScreenId,
-            registered: false,
-            content: null,
-            lastUpdate: newRecord.lastUpdate,
-            masterUrl: null
-        };
-
-        console.log('=== getScreenData END ===');
-        return screenData;
-    } catch (error) {
-        console.error('❌ ERRO em getScreenData:', error);
-        console.error('Stack:', error.stack);
-        return screenData || null;
-    }
-}
-
-// Ensure initializeScreenData is called only once during server startup
-let isInitialized = false;
-
-// If no data is found, do nothing; master is responsible for creating screens
-async function initializeScreenData() {
-    console.log('=== initializeScreenData START ===');
-    console.log('isInitialized:', isInitialized);
-    console.log('Current screenData:', screenData);
-
-    if (isInitialized) {
-        console.log('✅ Já inicializado, retornando dados existentes');
-        return screenData;
-    }
-
-    try {
-        screenData = await getScreenData();
-        console.log('📱 Dados obtidos:', screenData);
-        isInitialized = true;
-        console.log('=== initializeScreenData END ===');
-        return screenData;
-    } catch (error) {
-        console.error('❌ ERRO em initializeScreenData:', error);
-        console.error('Stack:', error.stack);
-        throw error;
-    }
-}
-
-// Inicialização do app
+// Routes with better error handling
 async function startServer() {
     try {
-        // Conectar ao banco de dados
         await connectDB();
-        console.log('Banco de dados conectado');
+        console.log('📦 Database connected');
         
-        // Inicializar dados da tela apenas uma vez
-        const initialData = await initializeScreenData();
-        console.log('Dados inicializados:', initialData);
+        await ScreenManager.initialize();
+        console.log('🚀 Server initialization complete');
 
-        // Configurar rotas
+        // Screen data endpoint
         app.get('/screen-data', async (req, res) => {
-            console.log('=== /screen-data REQUEST ===');
             try {
-                const data = await getScreenData();
-                console.log('📤 Enviando dados:', data);
-                
-                if (!data) {
-                    console.error('❌ Nenhum dado disponível');
-                    throw new Error('Dados da tela não encontrados');
-                }
-
-                const responseData = {
+                const data = ScreenManager.getData();
+                res.json({
                     pin: data.pin,
                     screenId: data.screenId,
-                    registered: data.registered || false,
-                    masterUrl: data.masterUrl || MASTER_URL
-                };
-
-                console.log('✅ Resposta enviada:', responseData);
-                res.json(responseData);
-            } catch (error) {
-                console.error('❌ ERRO em /screen-data:', error);
-                res.status(500).json({
-                    success: false,
-                    message: 'Erro ao recuperar dados da tela'
+                    registered: data.registered,
+                    masterUrl: data.masterUrl
                 });
+            } catch (error) {
+                console.error('Screen data error:', error);
+                res.status(500).json({ error: 'Internal server error' });
             }
         });
 
-        app.get('/', (req, res) => {
-            res.sendFile(path.join(__dirname, 'public', 'index.html'));
+        // Connection status endpoint
+        app.get('/connection-status', async (req, res) => {
+            try {
+                const data = ScreenManager.getData();
+                res.json({
+                    registered: data.registered,
+                    screenId: data.screenId,
+                    masterUrl: data.masterUrl,
+                    lastUpdate: data.lastUpdate
+                });
+            } catch (error) {
+                console.error('Connection status error:', error);
+                res.status(500).json({ error: 'Internal server error' });
+            }
         });
 
-        // Atualizar o endpoint SSE para incluir um evento inicial
-        app.get('/events', (req, res) => {
-            res.setHeader('Content-Type', 'text/event-stream');
-            res.setHeader('Cache-Control', 'no-cache');
-            res.setHeader('Connection', 'keep-alive');
-            res.setHeader('Access-Control-Allow-Origin', '*');
-            res.flushHeaders();
-
-            // Enviar estado inicial
-            const initialState = `data: ${JSON.stringify({
-                type: 'connected',
-                registered: screenData.registered,
-                screenId: screenData.screenId,
-                masterUrl: screenData.masterUrl
-            })}\n\n`;
-            
-            res.write(initialState);
-
-            // Keep connection alive
-            const keepAlive = setInterval(() => {
-                res.write(':keepalive\n\n');
-            }, 20000);
-
-            req.on('close', () => {
-                clearInterval(keepAlive);
-            });
-        });
-
-        // Modificar a rota de registro para ser mais simples
+        // Registration endpoint
         app.post('/register', async (req, res) => {
             try {
                 const { pin, screenId, masterUrl } = req.body;
-                
-                console.log('Registration request received:', { pin, screenId, masterUrl });
+                const data = ScreenManager.getData();
 
-                if (!pin || !screenId || !masterUrl) {
+                if (pin !== data.pin || screenId !== data.screenId) {
                     return res.status(400).json({
                         success: false,
-                        message: 'Missing required fields'
+                        message: 'Invalid credentials'
                     });
                 }
 
-                // Validar apenas com os dados locais
-                if (pin !== screenData.pin || screenId !== screenData.screenId) {
-                    console.log('Invalid credentials:', {
-                        expectedPin: screenData.pin,
-                        receivedPin: pin,
-                        expectedId: screenData.screenId,
-                        receivedId: screenId
-                    });
-                    return res.status(400).json({
-                        success: false,
-                        message: 'Invalid PIN or Screen ID'
-                    });
-                }
+                await ScreenManager.updateData({
+                    registered: true,
+                    masterUrl,
+                    lastUpdate: Date.now()
+                });
 
-                // Atualizar dados locais
-                screenData.registered = true;
-                screenData.masterUrl = masterUrl;
-
-                // Atualizar banco de dados
-                await Screen.findOneAndUpdate(
-                    { id: screenId },
-                    { 
-                        registered: true, 
-                        masterUrl: masterUrl,
-                        lastUpdate: new Date()
-                    },
-                    { new: true }
-                );
-
-                console.log('Registration successful:', screenData);
-                return res.json({
+                res.json({
                     success: true,
-                    message: `Screen ${screenId} registered successfully!`
+                    message: 'Registration successful'
                 });
             } catch (error) {
                 console.error('Registration error:', error);
-                res.status(500).json({
-                    success: false,
-                    message: 'Internal server error'
-                });
+                res.status(500).json({ error: 'Internal server error' });
             }
         });
 
-        // Atualizar rota de unregister para manter os mesmos códigos
+        // Content endpoint
+        app.get('/content', async (req, res) => {
+            try {
+                const data = ScreenManager.getData();
+                res.json({
+                    content: data.content,
+                    lastUpdate: data.lastUpdate
+                });
+            } catch (error) {
+                console.error('Content fetch error:', error);
+                res.status(500).json({ error: 'Internal server error' });
+            }
+        });
+
+        // SSE endpoint with error handling
+        app.get('/events', (req, res) => {
+            try {
+                const data = ScreenManager.getData();
+                
+                res.setHeader('Content-Type', 'text/event-stream');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Connection', 'keep-alive');
+                res.setHeader('Access-Control-Allow-Origin', '*');
+                
+                const initialState = JSON.stringify({
+                    type: 'connected',
+                    ...data
+                });
+                
+                res.write(`data: ${initialState}\n\n`);
+                
+                const keepAlive = setInterval(() => {
+                    res.write(':keepalive\n\n');
+                }, 20000);
+
+                req.on('close', () => clearInterval(keepAlive));
+            } catch (error) {
+                console.error('SSE error:', error);
+                res.status(500).end();
+            }
+        });
+
+        // Modificar a rota de unregister para manter os mesmos códigos
         app.post('/unregister', async (req, res) => {
             const { screenId } = req.body;
             
@@ -395,29 +343,6 @@ async function startServer() {
                 res.json({ 
                     content: screenData.content,
                     lastUpdate: screenData.lastUpdate
-                });
-            }
-        });
-
-        // Modificar a rota /connection-status para não reinicializar
-        app.get('/connection-status', async (req, res) => {
-            try {
-                const data = await getScreenData();
-                if (!data) {
-                    throw new Error('Dados da tela não encontrados');
-                }
-
-                res.json({
-                    registered: data.registered,
-                    screenId: data.screenId,
-                    masterUrl: data.masterUrl,
-                    lastUpdate: data.lastUpdate
-                });
-            } catch (error) {
-                console.error('Erro ao verificar status:', error);
-                res.status(500).json({
-                    success: false,
-                    message: 'Erro ao verificar status'
                 });
             }
         });

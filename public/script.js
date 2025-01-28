@@ -11,29 +11,41 @@ const RECONNECT_DELAY = 3000;
 
 let cachedScreenData = null;
 
-// Remove cache variables since we're using server-side state management
-async function getScreenData() {
+// Add a persistent cache
+const appState = {
+    screenData: null,
+    lastFetch: 0,
+    cacheTTL: 30000, // 30 seconds
+};
+
+// Update the caching function
+async function cacheScreenData() {
     try {
+        if (appState.screenData && Date.now() - appState.lastFetch < appState.cacheTTL) {
+            console.log('📦 Using cached data:', appState.screenData);
+            return appState.screenData;
+        }
+
         const response = await fetch('/screen-data');
         const data = await response.json();
-        console.log('📱 Dados recebidos:', data);
+        
+        if (!data || !data.screenId) {
+            throw new Error('Invalid screen data received');
+        }
+
+        appState.screenData = data;
+        appState.lastFetch = Date.now();
+        console.log('🔄 Cache updated:', appState.screenData);
         return data;
     } catch (error) {
-        console.error('❌ Erro ao buscar dados:', error);
-        throw error;
+        console.error('❌ Cache update failed:', error);
+        return appState.screenData; // Return existing cache on error
     }
 }
 
-async function cacheScreenData() {
-    try {
-        const data = await getScreenData();
-        cachedScreenData = data;
-        console.log('📱 Cache atualizado:', cachedScreenData);
-        return data;
-    } catch (error) {
-        console.error('❌ Erro ao atualizar cache:', error);
-        throw error;
-    }
+// Update getScreenData to use the cache
+async function getScreenData() {
+    return await cacheScreenData();
 }
 
 // Adicionar função para gerar ID de dispositivo único
@@ -51,25 +63,22 @@ function generateDeviceId() {
 async function initialize() {
     console.log('=== Inicializando Frontend ===');
     try {
-        // Primeiro carregar e cachear os dados da tela
-        await cacheScreenData();
-        console.log('📱 Estado inicial:', cachedScreenData);
+        const screenData = await getScreenData();
+        console.log('📱 Estado inicial:', screenData);
 
-        // Verificar status atual
-        if (cachedScreenData.registered && cachedScreenData.masterUrl) {
+        // Store in appState
+        appState.screenData = screenData;
+
+        if (screenData.registered) {
             console.log('✅ Tela registrada, iniciando apresentação');
             showPresentationSection();
             startPresentation();
         } else {
             console.log('ℹ️ Tela não registrada, mostrando registro');
-            showRegistrationSection(cachedScreenData);
+            showRegistrationSection(screenData);
         }
 
-        // Iniciar SSE depois de ter os dados em cache
         initSSE();
-
-        // Verificar status periodicamente
-        setInterval(checkConnectionStatus, 10000);
     } catch (error) {
         console.error('❌ Erro na inicialização:', error);
         showConnectionError();
@@ -80,27 +89,30 @@ async function initialize() {
 async function checkConnectionStatus() {
     console.log('📡 Verificando status de conexão...');
     try {
-        const currentData = await getScreenData();
-        
-        // Verificar se é a mesma tela
-        if (!cachedScreenData || currentData.screenId !== cachedScreenData.screenId) {
-            console.warn('❌ ID da tela alterado, atualizando cache');
-            await cacheScreenData();
-            return;
+        const screenData = await getScreenData();
+        if (!screenData) {
+            throw new Error('No screen data available');
         }
 
         const response = await fetch('/connection-status');
         const status = await response.json();
 
-        console.log('📡 Status:', status);
-        updateConnectionStatus(status);
+        // Only process if IDs match
+        if (status.screenId === screenData.screenId) {
+            console.log('📡 Status:', status);
+            updateConnectionStatus(status);
 
-        if (status.registered && status.masterUrl) {
-            showPresentationSection();
+            if (status.registered && status.masterUrl) {
+                showPresentationSection();
+            }
+        } else {
+            console.warn('⚠️ Ignoring status update - ID mismatch:', {
+                cached: screenData.screenId,
+                received: status.screenId
+            });
         }
     } catch (error) {
-        console.error('❌ Erro ao verificar status:', error);
-        showConnectionError();
+        console.error('❌ Error checking status:', error);
     }
 }
 
@@ -286,15 +298,17 @@ async function registerScreen() {
             })
         });
 
+        const data = await response.json();
+        
         if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Falha no registro');
+            throw new Error(data.message || 'Falha no registro');
         }
 
-        const data = await response.json();
         console.log('✅ Registro bem sucedido:', data);
 
         if (data.success) {
+            // Force cache update
+            await cacheScreenData();
             showPresentationSection();
             startPresentation();
         }

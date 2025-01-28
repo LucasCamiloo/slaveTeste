@@ -34,26 +34,33 @@ function generateRandomString(length) {
 // Mover a definição de screenData para após a conexão com o banco
 let screenData;
 
-// Adicionar cache em memória para dados frequentes
+// Modificar o cache para ter uma duração mais longa
 const screenCache = {
     data: null,
     lastUpdate: 0,
-    ttl: 5000 // 5 segundos
+    ttl: 3600000 // 1 hora
 };
 
 // Função para verificar e atualizar cache
 async function getScreenData() {
-    if (screenCache.data) {
-        return screenCache.data;
+    if (screenData) {
+        return screenData;
     }
 
-    const screen = await Screen.findOne({ id: screenData.screenId })
-        .select('content registered masterUrl lastUpdate')
-        .lean();
-    
-    screenCache.data = screen;
-    screenCache.lastUpdate = Date.now();
-    return screen;
+    const existingScreen = await Screen.findOne({}).lean();
+    if (existingScreen) {
+        screenData = {
+            pin: existingScreen.pin,
+            screenId: existingScreen.id,
+            registered: existingScreen.registered || false,
+            content: existingScreen.content || null,
+            lastUpdate: existingScreen.lastUpdate || Date.now(),
+            masterUrl: existingScreen.masterUrl || MASTER_URL
+        };
+        return screenData;
+    }
+
+    return null;
 }
 
 // Modificar a função isCodeUnique
@@ -91,10 +98,15 @@ async function generateUniqueCode() {
     throw new Error('Não foi possível gerar um código único após várias tentativas');
 }
 
-// Modificar a função initializeScreenData
+// Modificar a função initializeScreenData para só gerar novos dados se realmente necessário
 async function initializeScreenData() {
     try {
-        // Primeiro, tentar encontrar dados existentes no banco
+        // Verificar se já temos dados em memória
+        if (screenData && screenData.pin && screenData.screenId) {
+            return screenData;
+        }
+
+        // Tentar recuperar dados existentes do banco
         const existingScreen = await Screen.findOne({}).lean();
         
         if (existingScreen && existingScreen.pin && existingScreen.id) {
@@ -106,11 +118,10 @@ async function initializeScreenData() {
                 lastUpdate: existingScreen.lastUpdate || Date.now(),
                 masterUrl: existingScreen.masterUrl || MASTER_URL
             };
-            console.log('Usando dados existentes da tela:', screenData);
             return screenData;
         }
 
-        // Se não existir, gerar novos códigos uma única vez
+        // Se não existir nenhum dado, só então gerar novos códigos
         const { pin, screenId } = await generateUniqueCode();
         const newScreenData = {
             pin,
@@ -124,9 +135,8 @@ async function initializeScreenData() {
 
         // Criar novo registro no banco
         await Screen.create(newScreenData);
-
         screenData = newScreenData;
-        console.log('Novos dados da tela gerados:', screenData);
+        
         return screenData;
     } catch (error) {
         console.error('Erro ao inicializar dados da tela:', error);
@@ -148,16 +158,14 @@ async function startServer() {
         // Configurar rotas
         app.get('/screen-data', async (req, res) => {
             try {
-                // Não reinicializar, apenas garantir que temos dados
-                if (!screenData) {
-                    screenData = await initializeScreenData();
-                }
-
+                // Usar dados existentes ou inicializar apenas se necessário
+                const data = await getScreenData() || await initializeScreenData();
+                
                 const responseData = {
-                    pin: screenData.pin,
-                    screenId: screenData.screenId,
-                    registered: screenData.registered || false,
-                    masterUrl: screenData.masterUrl || MASTER_URL
+                    pin: data.pin,
+                    screenId: data.screenId,
+                    registered: data.registered || false,
+                    masterUrl: data.masterUrl || MASTER_URL
                 };
 
                 console.log('Enviando dados da tela:', responseData);
@@ -378,27 +386,22 @@ async function startServer() {
             }
         });
 
-        // Update connection status check
+        // Modificar a rota /connection-status para não reinicializar
         app.get('/connection-status', async (req, res) => {
             try {
-                // Usar dados em memória
-                if (!screenData) {
-                    screenData = await initializeScreenData();
-                }
-
+                const data = await getScreenData() || await initializeScreenData();
+                
                 res.json({
-                    registered: screenData.registered,
-                    screenId: screenData.screenId,
-                    masterUrl: screenData.masterUrl,
-                    lastUpdate: screenData.lastUpdate
+                    registered: data.registered,
+                    screenId: data.screenId,
+                    masterUrl: data.masterUrl,
+                    lastUpdate: data.lastUpdate
                 });
             } catch (error) {
                 console.error('Error checking connection status:', error);
-                res.json({
-                    registered: false,
-                    screenId: null,
-                    masterUrl: null,
-                    lastUpdate: null
+                res.status(500).json({
+                    success: false,
+                    message: 'Error checking connection status'
                 });
             }
         });

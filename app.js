@@ -532,6 +532,72 @@ async function startServer() {
             }
         });
 
+        // Add new endpoint for generating credentials
+        app.post('/generate-credentials', async (req, res) => {
+            try {
+                // Generate new screen data
+                const screenData = {
+                    screenId: generateRandomString(8),
+                    pin: generateRandomString(4).toUpperCase(),
+                    registered: false,
+                    content: null,
+                    lastUpdate: new Date()
+                };
+
+                // Save to database
+                const newScreen = await ScreenData.create(screenData);
+                console.log('✨ New screen credentials generated:', screenData);
+
+                res.json({
+                    success: true,
+                    deviceId: screenData.screenId,
+                    ...screenData
+                });
+            } catch (error) {
+                console.error('Error generating credentials:', error);
+                res.status(500).json({
+                    success: false,
+                    message: error.message
+                });
+            }
+        });
+
+        // Update screen-data endpoint to use deviceId
+        app.get('/screen-data', async (req, res) => {
+            try {
+                const deviceId = req.query.deviceId;
+                if (!deviceId) {
+                    return res.status(400).json({ 
+                        success: false, 
+                        message: 'Device ID required' 
+                    });
+                }
+
+                // Find or create screen data for this device
+                let screenData = await ScreenData.findOne({ screenId: deviceId });
+                
+                if (!screenData) {
+                    // Generate new credentials if none exist
+                    screenData = await ScreenData.create({
+                        screenId: generateRandomString(8),
+                        pin: generateRandomString(4).toUpperCase(),
+                        registered: false,
+                        content: null,
+                        lastUpdate: new Date()
+                    });
+                }
+
+                console.log('📱 Sending screen data:', screenData);
+                res.json(screenData);
+            } catch (error) {
+                console.error('Error fetching screen data:', error);
+                res.status(500).json({ 
+                    success: false, 
+                    message: error.message 
+                });
+            }
+        });
+
         // Add error handling middleware
         app.use((err, req, res, next) => {
             console.error('Error:', err);

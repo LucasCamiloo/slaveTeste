@@ -87,13 +87,13 @@ function showSlide() {
             // Add fade in
             slideContent.classList.add('in');
 
-            // Schedule next slide if there are multiple slides
-            if (currentContent.length > 1) {
-                setTimeout(() => {
-                    currentIndex = (currentIndex + 1) % currentContent.length;
-                    showSlide();
-                }, 10000);
-            }
+            // Always schedule next slide, regardless of content length
+            setTimeout(() => {
+                // Update index and ensure it loops back to start
+                currentIndex = (currentIndex + 1) % currentContent.length;
+                showSlide(); // Call showSlide again to continue the loop
+            }, 10000);
+
         } catch (error) {
             console.error('Error displaying slide:', error);
             console.error('Content:', currentContent[currentIndex]);

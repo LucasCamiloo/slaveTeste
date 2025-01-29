@@ -462,23 +462,33 @@ async function registerScreen() {
 
 // Função para processar listas de conteúdo
 function handleListContent(container) {
+    // Clear any existing intervals
     if (window.listInterval) {
         clearInterval(window.listInterval);
+    }
+    if (window.slideTimeout) {
+        clearTimeout(window.slideTimeout);
     }
 
     const listItems = Array.from(container.querySelectorAll('.product-list-item'));
     let currentListIndex = 0;
-    let completedCycles = 0;
-    const CYCLES_BEFORE_NEXT = 1; // Complete one full cycle before next slide
-    
-    function updateFeaturedProduct(currentItem) {
+    let isTransitioning = false;
+
+    console.log('Starting list rotation with', listItems.length, 'items');
+
+    function updateFeaturedProduct(item) {
+        console.log('Updating featured product:', currentListIndex + 1, 'of', listItems.length);
+
+        // Remove active class from all items
+        listItems.forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+
         const featuredImage = container.querySelector('.featured-image');
         const featuredName = container.querySelector('.featured-name');
         const featuredPrice = container.querySelector('.featured-price');
 
-        // Update image
         if (featuredImage) {
-            let imageUrl = currentItem.dataset.imageUrl;
+            let imageUrl = item.dataset.imageUrl;
             if (imageUrl && !imageUrl.startsWith('http')) {
                 imageUrl = `${MASTER_URL}${imageUrl}`;
             }
@@ -489,65 +499,106 @@ function handleListContent(container) {
             };
         }
 
-        // Update name and price
         if (featuredName) {
-            featuredName.textContent = currentItem.dataset.name || 'No Name';
+            featuredName.textContent = item.dataset.name || 'Sem nome';
         }
         if (featuredPrice) {
-            featuredPrice.textContent = currentItem.dataset.price || 'Price not available';
+            featuredPrice.textContent = item.dataset.price || 'Preço indisponível';
         }
+
+        // Scroll the item into view
+        item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    function rotateListItem() {
-        console.log('Rotating list item:', { 
-            currentIndex: currentListIndex, 
-            totalItems: listItems.length,
-            cycles: completedCycles 
-        });
+    function rotateListItems() {
+        if (isTransitioning) return;
+        isTransitioning = true;
 
-        // Remove active class from all items
-        listItems.forEach(item => item.classList.remove('active'));
+        updateFeaturedProduct(listItems[currentListIndex]);
 
-        // Get current item and activate it
-        const currentItem = listItems[currentListIndex];
-        currentItem.classList.add('active');
+        // Schedule next item or move to next slide
+        setTimeout(() => {
+            isTransitioning = false;
+            currentListIndex++;
 
-        // Update featured product display
-        updateFeaturedProduct(currentItem);
-
-        // Scroll to current item smoothly
-        currentItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
-        // Calculate next index
-        currentListIndex++;
-
-        // Check if we completed a cycle
-        if (currentListIndex >= listItems.length) {
-            currentListIndex = 0;
-            completedCycles++;
-            
-            // If we've completed all cycles, schedule next slide
-            if (completedCycles >= CYCLES_BEFORE_NEXT && currentContent.length > 1) {
-                console.log('Completed cycle, moving to next slide');
+            if (currentListIndex >= listItems.length) {
+                // Completed one full cycle, move to next slide
+                console.log('Completed list cycle, moving to next slide');
                 clearInterval(window.listInterval);
-                setTimeout(() => {
-                    currentIndex = (currentIndex + 1) % currentContent.length;
-                    showSlide();
-                }, 2000); // Wait 2 seconds before next slide
+                currentIndex = (currentIndex + 1) % currentContent.length;
+                showSlide();
                 return;
             }
-        }
-
-        // Schedule next rotation
-        if (window.listTimeout) {
-            clearTimeout(window.listTimeout);
-        }
-        window.listTimeout = setTimeout(rotateListItem, 5000);
+        }, 5000); // 5 seconds per item
     }
 
-    // Start the rotation
-    console.log('Starting list rotation with', listItems.length, 'items');
-    rotateListItem();
+    // Start the rotation immediately
+    rotateListItems();
+    
+    // Set up the interval for subsequent rotations
+    window.listInterval = setInterval(rotateListItems, 5000);
+
+    // Prevent the normal slide timeout from interrupting
+    if (window.slideTimeout) {
+        clearTimeout(window.slideTimeout);
+    }
+}
+
+// Update showSlide to better handle special content
+function showSlide() {
+    if (!currentContent || !Array.isArray(currentContent) || currentContent.length === 0) {
+        showWaitingScreen();
+        return;
+    }
+
+    const slideContent = document.getElementById('slideContent');
+    if (!slideContent) return;
+
+    console.log('Showing slide:', currentIndex + 1, 'of', currentContent.length);
+
+    // Clear any existing timeouts
+    if (window.slideTimeout) {
+        clearTimeout(window.slideTimeout);
+    }
+    if (window.listInterval) {
+        clearInterval(window.listInterval);
+    }
+
+    // Remove previous content with fade
+    slideContent.classList.remove('in');
+    
+    setTimeout(() => {
+        try {
+            let content = currentContent[currentIndex];
+            
+            // Fix URLs
+            content = content.replace(
+                /background(?:-image)?\s*:\s*url\(['"]?(?:http:\/\/localhost:\d+)?(\/[^'"\)]+)['"]?\)/g,
+                (match, path) => `background: url('${MASTER_URL}${path}')`
+            );
+
+            // Update content
+            slideContent.innerHTML = content;
+            
+            // Force reflow
+            void slideContent.offsetWidth;
+            slideContent.classList.add('in');
+
+            // Check if this is a list layout
+            if (content.includes('product-list-item')) {
+                handleListContent(slideContent);
+            } else {
+                // For non-list slides, schedule next slide
+                window.slideTimeout = setTimeout(() => {
+                    currentIndex = (currentIndex + 1) % currentContent.length;
+                    showSlide();
+                }, 10000);
+            }
+        } catch (error) {
+            console.error('Error displaying slide:', error);
+            showWaitingScreen();
+        }
+    }, 1000);
 }
 
 // Update loadContent function to better handle the response

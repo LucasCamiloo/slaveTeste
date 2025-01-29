@@ -33,89 +33,51 @@ function generateRandomString(length) {
 }
 
 // Update screen data management
-let screenData = null;
 const SCREEN_DATA_FILE = 'screenData.json';
 
-// Function to load or create screen data
 function getOrCreateScreenData() {
-    // If we have data in memory, return it
-    if (screenData) {
-        console.log('📱 Using cached screen data:', screenData);
-        return screenData;
-    }
-    
-    // Try to load from file first
     try {
+        // Always try to load existing data first
         if (fs.existsSync(SCREEN_DATA_FILE)) {
             const data = JSON.parse(fs.readFileSync(SCREEN_DATA_FILE));
             if (data && data.screenId && data.pin) {
-                console.log('📱 Loaded existing screen data:', data);
-                screenData = data;
-                return screenData;
+                console.log('📱 Using existing screen data:', data);
+                return data;
             }
         }
-    } catch (error) {
-        console.error('❌ Error loading screen data file:', error);
-    }
 
-    // If no valid data found, generate new
-    screenData = {
-        screenId: generateRandomString(8),
-        pin: generateRandomString(4).toUpperCase(),
-        registered: false,
-        content: null,
-        lastUpdate: Date.now()
-    };
+        // Only create new data if none exists
+        const newData = {
+            screenId: generateRandomString(8),
+            pin: generateRandomString(4).toUpperCase(),
+            registered: false,
+            content: null,
+            lastUpdate: Date.now()
+        };
 
-    // Save new data to file
-    try {
-        fs.writeFileSync(SCREEN_DATA_FILE, JSON.stringify(screenData, null, 2));
-        console.log('✅ Generated and saved new screen data:', screenData);
+        // Save new data
+        fs.writeFileSync(SCREEN_DATA_FILE, JSON.stringify(newData, null, 2));
+        console.log('✅ Created new screen data:', newData);
+        return newData;
     } catch (error) {
-        console.error('❌ Error saving screen data:', error);
+        console.error('❌ Error managing screen data:', error);
+        throw error;
     }
-    
-    return screenData;
 }
 
-// Function to load existing screen data
-function loadScreenData() {
-    try {
-        if (fs.existsSync(SCREEN_DATA_FILE)) {
-            const data = JSON.parse(fs.readFileSync(SCREEN_DATA_FILE));
-            if (data && data.screenId && data.pin) {
-                console.log('📱 Loading existing screen data:', data);
-                screenData = data; // Update the global screenData
-                return screenData;
-            }
-        }
-    } catch (error) {
-        console.error('❌ Error loading screen data:', error);
-    }
-
-    // If no valid data found, create new
-    return getOrCreateScreenData();
-}
-
-// Update ScreenManager to use the persistent data
+// Update ScreenManager to ensure data persistence
 const ScreenManager = {
     data: null,
     initialized: false,
 
     async initialize() {
-        if (this.initialized) return this.data;
-
-        try {
-            console.log('🔄 Initializing screen data...');
-            // Use the persistent data instead of generating new
-            this.data = loadScreenData();
-            this.initialized = true;
-            console.log('✅ Screen data initialized:', this.data);
+        if (this.initialized && this.data) {
             return this.data;
-        } catch (error) {
-            console.error('❌ Error initializing screen data:', error);
-            throw error;
         }
+
+        this.data = getOrCreateScreenData();
+        this.initialized = true;
+        return this.data;
     },
 
     // Update registration status and persist changes

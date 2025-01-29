@@ -133,20 +133,31 @@ const ScreenManager = {
 
     async updateContent(content) {
         try {
-            if (!this.data) return;
+            if (!this.data) {
+                await this.initialize();
+            }
+
+            // Ensure content is always stored as array
+            const contentToStore = Array.isArray(content) ? content : [content];
 
             // Update in MongoDB
             await ScreenData.findOneAndUpdate(
                 { screenId: this.data.screenId },
                 { 
-                    content,
+                    content: contentToStore,
                     lastUpdate: new Date()
                 }
             );
 
             // Update local cache
-            this.data.content = content;
+            this.data.content = contentToStore;
             this.data.lastUpdate = new Date();
+
+            console.log('Content updated:', {
+                type: typeof contentToStore,
+                isArray: Array.isArray(contentToStore),
+                length: contentToStore.length
+            });
         } catch (error) {
             console.error('❌ Error updating content:', error);
             throw error;
@@ -306,14 +317,38 @@ async function startServer() {
         // Content endpoints - apenas leitura do banco
         app.get('/content', async (req, res) => {
             try {
-                const data = ScreenManager.getData();
-                res.json({
-                    content: data.content,
-                    lastUpdate: data.lastUpdate
-                });
+                const data = await ScreenManager.getData();
+                console.log('Raw data from ScreenManager:', data);
+                
+                // Ensure we have a valid response structure with content
+                let contentToSend = data.content;
+
+                // If we have content, ensure it's an array
+                if (contentToSend) {
+                    contentToSend = Array.isArray(contentToSend) ? contentToSend : [contentToSend];
+                    console.log('Formatted content:', {
+                        type: typeof contentToSend,
+                        isArray: Array.isArray(contentToSend),
+                        length: contentToSend.length,
+                        sample: contentToSend[0]?.substring(0, 100)
+                    });
+                }
+
+                const response = {
+                    success: true,
+                    content: contentToSend || null,
+                    lastUpdate: data.lastUpdate || new Date()
+                };
+
+                console.log('Sending response:', response);
+                res.json(response);
             } catch (error) {
                 console.error('Content fetch error:', error);
-                res.status(500).json({ error: 'Internal server error' });
+                res.status(500).json({ 
+                    success: false, 
+                    message: error.message,
+                    content: null 
+                });
             }
         });
 
@@ -350,39 +385,6 @@ async function startServer() {
             }
         });
 
-        // Atualizar a rota POST de conteúdo
-        app.post('/content', async (req, res) => {
-            try {
-                const { content, screenId } = req.body;
-                const data = await ScreenManager.getData();
-
-                console.log('Received content update:', {
-                    forScreen: screenId,
-                    thisScreen: data.screenId,
-                    contentLength: content ? content.length : 0
-                });
-
-                // Only update if content is for this screen or no screenId specified (broadcast)
-                if (!screenId || screenId === data.screenId) {
-                    await ScreenManager.updateContent(content);
-                    console.log('Content updated successfully');
-                    res.json({ success: true });
-                } else {
-                    console.log('Ignoring content for different screen');
-                    res.json({ 
-                        success: true, 
-                        message: 'Content ignored - wrong screen' 
-                    });
-                }
-            } catch (error) {
-                console.error('Error updating content:', error);
-                res.status(500).json({ 
-                    success: false, 
-                    message: error.message 
-                });
-            }
-        });
-
         app.post('/scheduled-content', (req, res) => {
             const { content, scheduleTime } = req.body;
             if (content && scheduleTime) {
@@ -394,171 +396,6 @@ async function startServer() {
                 res.json({ success: true, message: 'Conteúdo agendado com sucesso!' });
             } else {
                 res.status(400).json({ success: false, message: 'Conteúdo ou horário de agendamento ausente' });
-            }
-        });
-
-        // Atualizar a rota de conteúdo para usar o banco de dados
-        app.get('/content', async (req, res) => {
-            try {
-                const screen = await getScreenData();
-                if (screen?.content) {
-                    return res.json({ 
-                        content: screen.content,
-                        lastUpdate: screen.lastUpdate || Date.now()
-                    });
-                }
-                
-                res.json({ 
-                    content: screenData.content,
-                    lastUpdate: screenData.lastUpdate
-                });
-            } catch (error) {
-                console.error('Erro ao buscar conteúdo:', error);
-                res.json({ 
-                    content: screenData.content,
-                    lastUpdate: screenData.lastUpdate
-                });
-            }
-        });
-
-        // Update content endpoint to fetch ad content if available
-        app.get('/content', async (req, res) => {
-            try {
-                const data = await ScreenManager.getData();
-                
-                // If screen has a currentAd, fetch its content from master
-                if (data.currentAd) {
-                    try {
-                        const adResponse = await fetch(`${data.masterUrl}/api/ads/${data.currentAd}`);
-                        const adData = await adResponse.json();
-                        
-                        if (adData.success && adData.ad.content) {
-                            console.log('📺 Fetched ad content for:', data.currentAd);
-                            
-                            // Update content in memory and database
-                            await ScreenManager.updateContent(adData.ad.content);
-                            
-                            return res.json({
-                                content: adData.ad.content,
-                                lastUpdate: new Date()
-                            });
-                        }
-                    } catch (error) {
-                        console.error('Error fetching ad content:', error);
-                    }
-                }
-
-                // Return current content if no ad or if ad fetch fails
-                res.json({
-                    content: data.content,
-                    lastUpdate: data.lastUpdate
-                });
-            } catch (error) {
-                console.error('Content fetch error:', error);
-                res.status(500).json({ error: 'Internal server error' });
-            }
-        });
-
-        // Update content endpoints
-        app.get('/content', async (req, res) => {
-            try {
-                const data = await ScreenManager.getData();
-                console.log('📦 Content request - Current data:', {
-                    hasContent: !!data.content,
-                    contentType: typeof data.content,
-                    isArray: Array.isArray(data.content)
-                });
-
-                // Ensure we always return an array
-                let contentToSend = data.content;
-                if (contentToSend) {
-                    contentToSend = Array.isArray(contentToSend) ? contentToSend : [contentToSend];
-                }
-
-                res.json({
-                    content: contentToSend || [],
-                    lastUpdate: data.lastUpdate || new Date()
-                });
-            } catch (error) {
-                console.error('❌ Content fetch error:', error);
-                res.status(500).json({ 
-                    success: false, 
-                    message: error.message,
-                    content: [] 
-                });
-            }
-        });
-
-        // Update content endpoint to ensure proper response
-        app.get('/content', async (req, res) => {
-            try {
-                const data = await ScreenManager.getData();
-                console.log('Content request - Current data:', {
-                    hasContent: !!data.content,
-                    contentType: typeof data.content,
-                    content: data.content
-                });
-
-                // Ensure we always return valid content structure
-                const response = {
-                    content: data.content || null,
-                    lastUpdate: data.lastUpdate || new Date()
-                };
-
-                console.log('Sending content response:', response);
-                res.json(response);
-            } catch (error) {
-                console.error('Content fetch error:', error);
-                res.status(500).json({ 
-                    success: false, 
-                    message: error.message,
-                    content: null 
-                });
-            }
-        });
-
-        // Update content endpoint to properly handle array content
-        app.get('/content', async (req, res) => {
-            try {
-                const data = await ScreenManager.getData();
-                console.log('Content request - Raw data:', {
-                    content: data.content,
-                    type: typeof data.content,
-                    isArray: Array.isArray(data.content)
-                });
-
-                // Ensure we have a valid response structure
-                const response = {
-                    success: true,
-                    content: null,
-                    lastUpdate: data.lastUpdate || new Date()
-                };
-
-                // Handle content based on its type
-                if (data.content) {
-                    // If content is already an array, use it directly
-                    if (Array.isArray(data.content)) {
-                        response.content = data.content;
-                    } 
-                    // If content is a string, wrap it in an array
-                    else if (typeof data.content === 'string') {
-                        response.content = [data.content];
-                    }
-                    // If content is an object with mixed type, convert to array
-                    else if (typeof data.content === 'object') {
-                        response.content = Array.isArray(data.content) ? data.content : [data.content];
-                    }
-                }
-
-                console.log('Sending formatted content:', response);
-                res.json(response);
-            } catch (error) {
-                console.error('Content fetch error:', error);
-                res.status(500).json({ 
-                    success: false, 
-                    message: error.message,
-                    content: null 
-                });
             }
         });
 

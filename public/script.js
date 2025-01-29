@@ -295,11 +295,14 @@ async function handleRegistrationUpdate(data) {
     console.log('🔄 Processando atualização de registro:', data);
 
     try {
-        // Recarregar dados da tela para informações atualizadas
-        await cacheScreenData();
-
-        if (data.screenId && data.screenId !== cachedScreenData.screenId) {
-            console.log('Ignorando atualização para outra tela');
+        const screenData = await getScreenData();
+        
+        // Compare screen IDs correctly
+        if (data.screenId && data.screenId !== screenData.screenId) {
+            console.log('Ignorando atualização para outra tela:', {
+                expected: screenData.screenId,
+                received: data.screenId
+            });
             return;
         }
 
@@ -347,23 +350,25 @@ function initSSE() {
 
                 const screenData = await getScreenData();
                 
-                // Processar apenas mensagens para esta tela
-                if (data.screenId === screenData.screenId) {
-                    console.log('✨ Processando mensagem para esta tela');
-                    if (data.type === 'screen_update' && data.registered) {
-                        console.log('🎉 Tela registrada no master, iniciando apresentação');
-                        showPresentationSection();
-                        updateConnectionStatus({
-                            registered: true,
-                            masterUrl: data.masterUrl
-                        });
+                // Log the comparison for debugging
+                console.log('Comparando IDs:', {
+                    messageScreenId: data.screenId,
+                    localScreenId: screenData.screenId
+                });
 
+                // Process only messages for this screen or broadcasts
+                if (!data.screenId || data.screenId === screenData.screenId) {
+                    console.log('✨ Processando mensagem para esta tela');
+                    
+                    if (data.type === 'screen_update') {
                         if (data.content) {
                             currentContent = Array.isArray(data.content) ? data.content : [data.content];
                             currentIndex = 0;
                             showSlide();
                         }
                     }
+                } else {
+                    console.log('Ignorando mensagem destinada a outra tela');
                 }
             } catch (error) {
                 console.error('❌ Erro ao processar mensagem SSE:', error);

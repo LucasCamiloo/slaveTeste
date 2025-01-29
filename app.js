@@ -186,19 +186,37 @@ async function startServer() {
         // Screen data endpoint
         app.get('/screen-data', async (req, res) => {
             try {
-                const data = await ScreenManager.getData();
-                console.log('📱 Enviando dados da tela:', data);
-                res.json(data);
-            } catch (error) {
-                console.error('❌ Erro ao obter dados da tela:', error);
-                res.status(500).json({ error: 'Internal server error' });
-            }
-        });
+                // Try to find existing screen data or create new one
+                let screenData = await ScreenData.findOne();
+                
+                if (!screenData) {
+                    screenData = await ScreenData.create({
+                        screenId: generateRandomString(8),
+                        pin: generateRandomString(4).toUpperCase(),
+                        registered: false,
+                        content: null,
+                        lastUpdate: new Date()
+                    });
+                    console.log('✨ Generated new screen data:', screenData);
+                }
 
-        // Update the screen-data endpoint
-        app.get('/screen-data', (req, res) => {
-            const data = loadScreenData();
-            res.json(data);
+                // Return only necessary data
+                const responseData = {
+                    screenId: screenData.screenId,
+                    pin: screenData.pin,
+                    registered: screenData.registered,
+                    lastUpdate: screenData.lastUpdate
+                };
+
+                console.log('📤 Sending screen data:', responseData);
+                res.json(responseData);
+            } catch (error) {
+                console.error('❌ Error handling screen data request:', error);
+                res.status(500).json({
+                    success: false,
+                    message: error.message
+                });
+            }
         });
 
         // Connection status endpoint
@@ -222,60 +240,56 @@ async function startServer() {
         app.post('/register', async (req, res) => {
             try {
                 const { pin, screenId, masterUrl } = req.body;
-                console.log('📝 Recebendo registro:', { pin, screenId, masterUrl });
+                console.log('📝 Receiving registration:', { pin, screenId, masterUrl });
 
                 if (!pin || !screenId || !masterUrl) {
-                    console.error('❌ Dados inválidos:', { pin, screenId, masterUrl });
                     return res.status(400).json({
                         success: false,
                         message: 'Missing required fields'
                     });
                 }
 
-                const data = await ScreenManager.getData();
-                console.log('📝 Dados atuais:', data);
+                // Find or update screen data
+                let screenData = await ScreenData.findOne({ screenId });
                 
-                if (pin !== data.pin || screenId !== data.screenId) {
-                    console.error('❌ Credenciais inválidas:', { 
-                        expected: { pin: data.pin, screenId: data.screenId },
-                        received: { pin, screenId }
+                if (!screenData) {
+                    return res.status(404).json({
+                        success: false,
+                        message: 'Screen not found'
                     });
+                }
+
+                if (screenData.pin !== pin) {
                     return res.status(400).json({
                         success: false,
-                        message: 'Invalid credentials'
+                        message: 'Invalid PIN'
                     });
                 }
 
                 // Update registration status
-                await ScreenManager.updateRegistrationStatus(true, masterUrl);
-                const updatedData = await ScreenManager.getData();
-                console.log('✅ Tela registrada:', updatedData);
+                screenData.registered = true;
+                screenData.masterUrl = masterUrl;
+                screenData.lastUpdate = new Date();
+                await screenData.save();
 
-                // Save to file for persistence
-                try {
-                    fs.writeFileSync('screenData.json', JSON.stringify({
-                        ...updatedData,
-                        registered: true,
-                        masterUrl
-                    }));
-                } catch (err) {
-                    console.error('❌ Erro ao salvar dados:', err);
-                    // Continue even if save fails
-                }
+                console.log('✅ Screen registered successfully:', {
+                    screenId,
+                    masterUrl,
+                    registered: true
+                });
 
-                res.json({ 
-                    success: true, 
+                res.json({
+                    success: true,
                     message: 'Registration successful',
-                    screenId: screenId,
-                    registered: true,
-                    masterUrl: masterUrl
+                    screenId,
+                    registered: true
                 });
 
             } catch (error) {
-                console.error('❌ Erro no registro:', error);
-                res.status(500).json({ 
-                    success: false, 
-                    message: error.message || 'Internal server error'
+                console.error('❌ Registration error:', error);
+                res.status(500).json({
+                    success: false,
+                    message: error.message
                 });
             }
         });

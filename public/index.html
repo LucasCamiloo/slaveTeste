@@ -47,17 +47,26 @@
 
         #presentationSection {
             opacity: 0;
-            background: black;
+            background: transparent; /* Changed from black to transparent */
+            transition: opacity 0.5s ease;
+        }
+
+        #presentationSection.visible {
+            opacity: 1 !important;
+            z-index: 1; /* Ensure it's above registration section when visible */
         }
 
         /* Visibility controls */
         .hidden {
             opacity: 0 !important;
             pointer-events: none;
+            z-index: -1;
         }
 
         .visible {
             opacity: 1 !important;
+            z-index: 1;
+            pointer-events: auto;
         }
 
         /* Slide container */
@@ -69,6 +78,26 @@
             align-items: center;
         }
 
+        #slideContainer {
+            width: 100%;
+            height: 100%;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: transparent;
+        }
+
+        #slideContent {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: transparent;
+        }
+
         /* Advertisement container */
         .ad-container {
             width: 100%;
@@ -77,8 +106,11 @@
             background-size: cover !important;
             background-position: center !important;
             background-repeat: no-repeat !important;
-            padding: 2vh 2vw;
+            padding: 0; /* Remove padding */
             box-sizing: border-box;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
 
         /* Connection status */
@@ -433,10 +465,10 @@
     </div>
 
     <!-- Seção de Apresentação -->
-    <div id="presentationSection">
+    <div id="presentationSection" class="fade">
         <div id="connectionStatus" class="connection-status">Verificando conexão...</div>
         <div id="slideContainer">
-            <div id="slideContent" class="fade"></div>
+            <div id="slideContent"></div>
         </div>
     </div>
 

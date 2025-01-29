@@ -11,11 +11,12 @@ const RECONNECT_DELAY = 3000;
 
 let cachedScreenData = null;
 
-// Add a persistent cache
+// Update cache management
 const appState = {
     screenData: null,
     lastFetch: 0,
     cacheTTL: 30000, // 30 seconds
+    initialized: false
 };
 
 // Função para gerar ID de dispositivo único
@@ -103,52 +104,51 @@ function handleVideoContent(video) {
     };
 }
 
-// Função de cache aprimorada
+// Enhanced caching function
 async function cacheScreenData() {
     try {
-        if (appState.screenData && Date.now() - appState.lastFetch < appState.cacheTTL) {
-            console.log('📦 Usando dados em cache:', appState.screenData);
+        // If we have initialized data, just return it
+        if (appState.initialized && appState.screenData) {
             return appState.screenData;
         }
 
-        // Tentar obter dados do localStorage primeiro
+        // Try to get data from localStorage first
         const storedData = localStorage.getItem('screenData');
         if (storedData) {
             const parsedData = JSON.parse(storedData);
             if (parsedData.screenId && parsedData.pin) {
-                console.log('📦 Usando dados armazenados:', parsedData);
+                console.log('📦 Using stored data:', parsedData);
                 appState.screenData = parsedData;
-                appState.lastFetch = Date.now();
+                appState.initialized = true;
                 return parsedData;
             }
         }
 
+        // If no stored data, fetch from server
         const response = await fetch('/screen-data');
         const data = await response.json();
         
         if (!data || !data.screenId) {
-            throw new Error('Dados da tela inválidos recebidos');
+            throw new Error('Invalid screen data received');
         }
 
-        // Armazenar no localStorage para persistência
+        // Store the data
         localStorage.setItem('screenData', JSON.stringify(data));
         appState.screenData = data;
-        appState.lastFetch = Date.now();
-        console.log('🔄 Cache atualizado:', appState.screenData);
+        appState.initialized = true;
+        console.log('🔄 Cache initialized:', appState.screenData);
         return data;
     } catch (error) {
-        console.error('❌ Falha ao atualizar cache:', error);
-        // Tentar usar dados armazenados como fallback
-        const storedData = localStorage.getItem('screenData');
-        if (storedData) {
-            return JSON.parse(storedData);
-        }
+        console.error('❌ Cache update failed:', error);
         throw error;
     }
 }
 
 // Função para obter dados da tela usando o cache
 async function getScreenData() {
+    if (appState.initialized && appState.screenData) {
+        return appState.screenData;
+    }
     return await cacheScreenData();
 }
 
@@ -257,18 +257,22 @@ async function initialize() {
 async function checkConnectionStatus() {
     try {
         const screenData = await getScreenData();
-        if (!screenData || !screenData.screenId) {
-            throw new Error('Nenhum dado válido da tela disponível');
+        if (!screenData?.screenId) {
+            throw new Error('No valid screen data available');
         }
 
         const response = await fetch(`${MASTER_URL}/screens`);
         const { screens } = await response.json();
         
-        // Encontrar esta tela na lista do master
-        const registeredScreen = screens.find(screen => screen.id === screenData.screenId);
+        console.log('Comparing screen IDs:', {
+            local: screenData.screenId,
+            screens: screens.map(s => s.id)
+        });
 
+        const registeredScreen = screens.find(screen => screen.id === screenData.screenId);
+        
         if (!registeredScreen) {
-            console.log('ℹ️ Tela não encontrada no master, mostrando registro');
+            console.log('ℹ️ Screen not found on master, showing registration');
             showRegistrationSection(screenData);
             return;
         }
@@ -285,7 +289,7 @@ async function checkConnectionStatus() {
             showRegistrationSection(screenData);
         }
     } catch (error) {
-        console.error('❌ Erro ao verificar status:', error);
+        console.error('❌ Status check failed:', error);
         showConnectionError();
     }
 }

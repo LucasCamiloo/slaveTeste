@@ -281,7 +281,7 @@ async function initialize() {
     }
 }
 
-// Função para verificar o status da conexão com o master
+// Update checkConnectionStatus to also load content when connection is confirmed
 async function checkConnectionStatus() {
     try {
         const screenData = await getScreenData();
@@ -301,27 +301,27 @@ async function checkConnectionStatus() {
         
         if (!registeredScreen) {
             console.log('❌ Screen not found in master, resetting state');
-            // Reset local storage and state
             localStorage.removeItem('screenData');
             appState.screenData = null;
             appState.initialized = false;
             
-            // Fetch new screen data
             const newData = await getScreenData();
             showRegistrationSection(newData);
             return;
         }
 
-        // Update UI based on registration status
         if (registeredScreen.registered) {
-            console.log('✅ Tela verificada no master:', registeredScreen);
+            console.log('✅ Screen verified in master:', registeredScreen);
             showPresentationSection();
             updateConnectionStatus({
                 registered: true,
                 masterUrl: MASTER_URL
             });
+
+            // Load content immediately after confirming registration
+            await loadContent();
         } else {
-            console.log('ℹ️ Tela encontrada, mas não registrada');
+            console.log('ℹ️ Screen found but not registered');
             showRegistrationSection(screenData);
         }
     } catch (error) {
@@ -508,7 +508,7 @@ function handleListContent(container) {
     window.listInterval = setInterval(rotateListItem, 10000); // 10 segundos
 }
 
-// Add loadContent function
+// Update loadContent function to properly handle ad content
 async function loadContent() {
     try {
         console.log('Loading content...');
@@ -543,7 +543,13 @@ async function loadContent() {
 
             currentContent = contentArray;
             currentIndex = 0;
-            showSlide();
+
+            // Immediately show content when loaded
+            if (currentContent && currentContent.length > 0) {
+                showSlide();
+            } else {
+                showWaitingScreen();
+            }
         } else {
             console.log('No content available');
             showWaitingScreen();

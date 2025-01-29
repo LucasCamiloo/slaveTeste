@@ -853,3 +853,52 @@ app.post('/register', async (req, res) => {
         });
     }
 });
+
+// Update the screen-data endpoint to handle requests without device ID
+app.get('/screen-data', async (req, res) => {
+    try {
+        // Get device ID from headers, query params, or generate a new one
+        const deviceId = req.headers['x-device-id'] || 
+                        req.query.deviceId || 
+                        `temp_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+        
+        console.log('📱 Receiving screen data request for device:', deviceId);
+
+        // Try to find existing screen data for this device
+        let screenData = await ScreenData.findOne({ deviceId });
+
+        // If no existing data, generate new credentials
+        if (!screenData) {
+            screenData = await ScreenData.create({
+                deviceId,
+                screenId: generateRandomString(8),
+                pin: generateRandomString(4).toUpperCase(),
+                registered: false,
+                content: null,
+                lastUpdate: new Date()
+            });
+            console.log('✨ Generated new screen data:', {
+                deviceId,
+                screenId: screenData.screenId,
+                pin: screenData.pin
+            });
+        }
+
+        // Prepare response data (excluding internal fields)
+        const responseData = {
+            screenId: screenData.screenId,
+            pin: screenData.pin,
+            registered: screenData.registered,
+            lastUpdate: screenData.lastUpdate
+        };
+
+        console.log('📤 Sending screen data:', responseData);
+        res.json(responseData);
+    } catch (error) {
+        console.error('❌ Error handling screen data request:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});

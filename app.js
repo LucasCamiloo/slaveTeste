@@ -189,28 +189,36 @@ async function startServer() {
                 const deviceId = req.headers['x-device-id'];
                 console.log('📱 Screen data request for device:', deviceId);
 
-                // Try to find existing screen data
-                let screenData = await ScreenData.findOne({ 
+                // First try to find existing screen data for this device
+                let screenData = await ScreenData.findOne({
                     $or: [
                         { deviceId },
                         { screenId: deviceId }
                     ]
                 });
 
-                // If no screen data exists, create new one
+                // Generate new credentials if none exist
                 if (!screenData) {
+                    const newScreenId = generateRandomString(8);
+                    const newPin = generateRandomString(4).toUpperCase();
+                    
                     screenData = await ScreenData.create({
                         deviceId,
-                        screenId: deviceId || generateRandomString(8),
-                        pin: generateRandomString(4).toUpperCase(),
+                        screenId: newScreenId,
+                        pin: newPin,
                         registered: false,
                         content: null,
                         lastUpdate: new Date()
                     });
-                    console.log('✨ Created new screen data:', screenData);
+                    
+                    console.log('✨ Generated new screen credentials:', {
+                        deviceId,
+                        screenId: newScreenId,
+                        pin: newPin
+                    });
                 }
 
-                // Prepare response
+                // Only send necessary data
                 const responseData = {
                     screenId: screenData.screenId,
                     pin: screenData.pin,
@@ -252,37 +260,43 @@ async function startServer() {
                 const { pin, screenId, masterUrl } = req.body;
                 console.log('📝 Receiving registration:', { pin, screenId, masterUrl });
 
+                // Validation
                 if (!pin || !screenId || !masterUrl) {
+                    console.error('❌ Missing required fields:', { pin, screenId, masterUrl });
                     return res.status(400).json({
                         success: false,
                         message: 'Missing required fields'
                     });
                 }
 
-                // Find or update screen data
-                let screenData = await ScreenData.findOne({ screenId });
-                
+                // Find screen data
+                const screenData = await ScreenData.findOne({ screenId });
+                console.log('Found screen data:', screenData);
+
                 if (!screenData) {
+                    console.error('❌ Screen not found:', screenId);
                     return res.status(404).json({
                         success: false,
                         message: 'Screen not found'
                     });
                 }
 
+                // Verify PIN
                 if (screenData.pin !== pin) {
+                    console.error('❌ PIN mismatch:', { expected: screenData.pin, received: pin });
                     return res.status(400).json({
                         success: false,
                         message: 'Invalid PIN'
                     });
                 }
 
-                // Update registration status
+                // Update registration
                 screenData.registered = true;
                 screenData.masterUrl = masterUrl;
                 screenData.lastUpdate = new Date();
                 await screenData.save();
 
-                console.log('✅ Screen registered successfully:', {
+                console.log('✅ Registration successful:', {
                     screenId,
                     masterUrl,
                     registered: true
@@ -826,6 +840,7 @@ app.post('/register', async (req, res) => {
         const { pin, screenId, masterUrl } = req.body;
         console.log('📝 Receiving registration:', { pin, screenId, masterUrl });
 
+        // Validation
         if (!pin || !screenId || !masterUrl) {
             console.error('❌ Invalid data:', { pin, screenId, masterUrl });
             return res.status(400).json({

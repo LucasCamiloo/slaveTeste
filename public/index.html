@@ -568,36 +568,89 @@
             }
         }
 
-        // Função de inicialização principal atualizada
+        // Move presentation functions to global scope
+        function startPresentation() {
+            console.log('🎬 Iniciando apresentação');
+            if (appState.currentContent) {
+                showSlide();
+            } else {
+                console.log('ℹ️ Nenhum conteúdo para apresentar');
+                showWaitingScreen();
+            }
+        }
+
+        function showSlide() {
+            if (!appState.currentContent) {
+                showWaitingScreen();
+                return;
+            }
+
+            const slideContent = document.getElementById('slideContent');
+            if (slideContent) {
+                slideContent.innerHTML = appState.currentContent;
+            }
+        }
+
+        // Modify initialize function
         async function initialize() {
             console.log('=== Inicializando Frontend ===');
             try {
-                // Buscar dados iniciais e fazer cache
+                // First check if we have a device ID
+                if (!localStorage.getItem('deviceId')) {
+                    // Generate new device credentials only if none exist
+                    const response = await fetch('/generate-credentials', {
+                        method: 'POST'
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        localStorage.setItem('deviceId', data.deviceId);
+                        localStorage.setItem('screenData', JSON.stringify(data));
+                    }
+                }
+
+                // Then get current screen data
                 const screenData = await getScreenData();
                 console.log('📱 Estado inicial:', screenData);
 
-                // Verificar status de registro
-                const statusResponse = await fetch('/connection-status');
-                const statusData = await statusResponse.json();
-                console.log('📡 Status inicial:', statusData);
-
-                // Atualizar interface baseado no status
-                if (statusData.registered && statusData.masterUrl) {
+                if (screenData.registered) {
                     console.log('✅ Tela registrada, iniciando apresentação');
                     showPresentationSection();
-                    startPresentation();
+                    if (screenData.content) {
+                        appState.currentContent = screenData.content;
+                        startPresentation();
+                    } else {
+                        showWaitingScreen();
+                    }
                 } else {
                     console.log('ℹ️ Tela não registrada, mostrando registro');
                     showRegistrationSection(screenData);
                 }
 
-                // Iniciar SSE
                 initSSE();
-
-                // Verificar status periodicamente (reduzir frequência)
-                setInterval(checkConnectionStatus, 10000); // A cada 10 segundos
             } catch (error) {
                 console.error('❌ Erro na inicialização:', error);
+                // Don't show error immediately, check master connection first
+                checkMasterConnection();
+            }
+        }
+
+        // Add master connection check
+        async function checkMasterConnection() {
+            try {
+                const response = await fetch(`${MASTER_URL}/screens`);
+                if (!response.ok) {
+                    showConnectionError();
+                    return;
+                }
+                const data = await response.json();
+                const screenData = await getScreenData();
+                
+                const isRegistered = data.screens?.some(s => s.id === screenData.screenId);
+                if (!isRegistered) {
+                    showRegistrationSection(screenData);
+                }
+            } catch (error) {
+                console.error('Master connection failed:', error);
                 showConnectionError();
             }
         }

@@ -187,22 +187,21 @@ async function startServer() {
         app.get('/screen-data', async (req, res) => {
             try {
                 const deviceId = req.headers['x-device-id'];
-                
-                if (!deviceId) {
-                    return res.status(400).json({
-                        success: false,
-                        message: 'Device ID is required'
-                    });
-                }
+                console.log('📱 Screen data request for device:', deviceId);
 
-                // Try to find existing screen data for this device
-                let screenData = await ScreenData.findOne({ deviceId });
+                // Try to find existing screen data
+                let screenData = await ScreenData.findOne({ 
+                    $or: [
+                        { deviceId },
+                        { screenId: deviceId }
+                    ]
+                });
 
                 // If no screen data exists, create new one
                 if (!screenData) {
                     screenData = await ScreenData.create({
                         deviceId,
-                        screenId: generateRandomString(8),
+                        screenId: deviceId || generateRandomString(8),
                         pin: generateRandomString(4).toUpperCase(),
                         registered: false,
                         content: null,
@@ -211,7 +210,7 @@ async function startServer() {
                     console.log('✨ Created new screen data:', screenData);
                 }
 
-                // Remove internal fields before sending
+                // Prepare response
                 const responseData = {
                     screenId: screenData.screenId,
                     pin: screenData.pin,
@@ -219,10 +218,10 @@ async function startServer() {
                     lastUpdate: screenData.lastUpdate
                 };
 
-                console.log('📱 Sending screen data:', responseData);
+                console.log('📤 Sending screen data:', responseData);
                 res.json(responseData);
             } catch (error) {
-                console.error('Error fetching screen data:', error);
+                console.error('❌ Error handling screen data request:', error);
                 res.status(500).json({
                     success: false,
                     message: error.message

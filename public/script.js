@@ -52,32 +52,59 @@ function showWaitingScreen() {
     }
 }
 
+// Update showSlide function to better handle content display
 function showSlide() {
+    console.log('Showing slide:', currentIndex);
+    
     if (!currentContent || currentContent.length === 0) {
+        console.log('No content to display');
         showWaitingScreen();
         return;
     }
 
     const slideContent = document.getElementById('slideContent');
-    if (!slideContent) return;
-
-    // Limpar conteúdo existente
-    slideContent.innerHTML = '';
-
-    // Mostrar slide atual
-    const content = currentContent[currentIndex];
-    slideContent.innerHTML = content;
-
-    // Lidar com conteúdo especial (como listas ou vídeos)
-    handleSpecialContent(slideContent);
-
-    // Agendar próximo slide
-    if (currentContent.length > 1) {
-        setTimeout(() => {
-            currentIndex = (currentIndex + 1) % currentContent.length;
-            showSlide();
-        }, 10000); // 10 segundos por slide
+    if (!slideContent) {
+        console.error('Slide content element not found');
+        return;
     }
+
+    // Remove previous content with fade
+    slideContent.classList.remove('in');
+    
+    setTimeout(() => {
+        try {
+            // Get and fix current content
+            let content = currentContent[currentIndex];
+            console.log('Current content sample:', content.substring(0, 100) + '...');
+
+            // Update content
+            slideContent.innerHTML = content;
+            
+            // Force layout recalculation
+            void slideContent.offsetWidth;
+            
+            // Add fade in
+            slideContent.classList.add('in');
+
+            // Handle special content types
+            if (content.includes('video-container')) {
+                handleVideoContent(slideContent);
+            } else if (content.includes('product-list-item')) {
+                handleListContent(slideContent);
+            } else {
+                // Regular content - schedule next slide
+                if (currentContent.length > 1) {
+                    setTimeout(() => {
+                        currentIndex = (currentIndex + 1) % currentContent.length;
+                        showSlide();
+                    }, 10000);
+                }
+            }
+        } catch (error) {
+            console.error('Error displaying slide:', error);
+            showWaitingScreen();
+        }
+    }, 1000);
 }
 
 function handleSpecialContent(container) {
@@ -337,25 +364,25 @@ function initSSE() {
             checkConnectionStatus();
         };
 
+        // Update eventSource message handler
         eventSource.onmessage = async (event) => {
             try {
                 const data = JSON.parse(event.data);
-                console.log('📨 Mensagem SSE recebida:', data);
+                console.log('📨 SSE message received:', data);
 
                 const screenData = await getScreenData();
                 
-                // Processar apenas mensagens para esta tela
                 if (data.screenId === screenData.screenId) {
-                    console.log('✨ Processando mensagem para esta tela');
-                    if (data.type === 'screen_update' && data.registered) {
-                        console.log('🎉 Tela registrada no master, iniciando apresentação');
-                        showPresentationSection();
-                        updateConnectionStatus({
-                            registered: true,
-                            masterUrl: data.masterUrl
-                        });
-
+                    console.log('✨ Processing message for this screen');
+                    if (data.type === 'screen_update') {
                         if (data.content) {
+                            console.log('New content received:', {
+                                contentLength: data.content.length,
+                                sample: Array.isArray(data.content) ? 
+                                    data.content[0]?.substring(0, 100) + '...' : 
+                                    data.content.substring(0, 100) + '...'
+                            });
+                            
                             currentContent = Array.isArray(data.content) ? data.content : [data.content];
                             currentIndex = 0;
                             showSlide();
@@ -363,7 +390,7 @@ function initSSE() {
                     }
                 }
             } catch (error) {
-                console.error('❌ Erro ao processar mensagem SSE:', error);
+                console.error('❌ Error processing SSE message:', error);
             }
         };
 
@@ -483,6 +510,7 @@ function handleListContent(container) {
 // Add loadContent function
 async function loadContent() {
     try {
+        console.log('Loading content...');
         const response = await fetch('/content');
         const data = await response.json();
         
@@ -492,16 +520,26 @@ async function loadContent() {
             
             // Fix URLs in content
             contentArray = contentArray.map(content => {
-                return content.replace(
+                // Fix image URLs
+                let fixedContent = content.replace(
                     /(src|href)="\/files\//g,
                     `$1="${MASTER_URL}/files/`
-                ).replace(
-                    /url\(['"]?(\/fundos\/[^'"\)]+)['"]?\)/g,
-                    (match, path) => `url('${MASTER_URL}${path}')`
                 );
+                
+                // Fix background image URLs
+                fixedContent = fixedContent.replace(
+                    /background(?:-image)?\s*:\s*url\(['"]?(\/[^'"\)]+)['"]?\)/g,
+                    (match, path) => `background: url('${MASTER_URL}${path}')`
+                );
+
+                return fixedContent;
             });
 
-            console.log('📦 Content loaded:', contentArray);
+            console.log('📦 Content loaded:', {
+                contentCount: contentArray.length,
+                firstContent: contentArray[0]?.substring(0, 100) + '...'
+            });
+
             currentContent = contentArray;
             currentIndex = 0;
             showSlide();

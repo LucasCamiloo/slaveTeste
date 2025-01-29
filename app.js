@@ -638,3 +638,45 @@ async function startServer() {
 
 // Export the app for Vercel
 export default startServer();
+
+app.post('/content', async (req, res) => {
+    try {
+        const { content, screenId } = req.body;
+        const data = await ScreenManager.getData();
+
+        console.log('Received content update:', {
+            forScreen: screenId,
+            thisScreen: data.screenId,
+            contentType: typeof content,
+            isArray: Array.isArray(content),
+            contentLength: content ? (Array.isArray(content) ? content.length : 1) : 0
+        });
+
+        // Only update if content is for this screen or no screenId specified (broadcast)
+        if (!screenId || screenId === data.screenId) {
+            // If content is null, just clear the current content
+            if (content === null) {
+                await ScreenManager.updateContent([]);
+                console.log('Content cleared successfully');
+            } else {
+                // Ensure content is array and update
+                const contentArray = Array.isArray(content) ? content : [content];
+                await ScreenManager.updateContent(contentArray);
+                console.log('Content updated successfully');
+            }
+            res.json({ success: true });
+        } else {
+            console.log('Ignoring content for different screen');
+            res.json({ 
+                success: true, 
+                message: 'Content ignored - wrong screen' 
+            });
+        }
+    } catch (error) {
+        console.error('Error updating content:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: error.message 
+        });
+    }
+});

@@ -5,6 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SLAVE</title>
     <style>
+        /* Basic resets from base.html */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #000;
+            font-family: Arial, sans-serif;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Copy all the styles from base.html */
         /* Basic resets */
         body {
             margin: 0;
@@ -380,12 +391,43 @@
             height: 100%;
             object-fit: contain;
         }
+
+        /* Add product display animations */
+        @keyframes slideIn {
+            from {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .product {
+            animation: fadeIn 0.5s ease-out;
+        }
+
+        .product-list-item {
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .product-list-item.active {
+            transform: scale(1.05);
+            transition: transform 0.3s ease;
+        }
     </style>
 </head>
 <body>
     <!-- Seção de Registro -->
     <div id="registrationSection">
         <h1>Registro de Tela</h1>
+        <img id="qrcode" alt="QR Code">
         <p>PIN: <span id="pin"></span></p>
         <p>ID da Tela: <span id="screenId"></span></p>
     </div>
@@ -394,66 +436,134 @@
     <div id="presentationSection">
         <div id="connectionStatus" class="connection-status">Verificando conexão...</div>
         <div id="slideContainer">
-            <div id="slideContent"></div>
+            <div id="slideContent" class="fade"></div>
         </div>
     </div>
 
-    <div id="displayArea" style="display: none;"></div>
+    <div id="displayArea" style="display: none;">
+        <!-- ...existing code or placeholders for slides/videos... -->
+    </div>
 
     <script>
-        // Constantes globais
-        const MASTER_URL = 'https://master-teste.vercel.app';
-        const SLAVE_URL = 'https://slave-teste.vercel.app';
-        
-        // Estado da aplicação com persistência
-        const appState = {
-            currentContent: null,
-            currentIndex: 0,
-            statusTimeout: null,
-            eventSource: null,
-            reconnectAttempts: 0,
-            MAX_RECONNECT_ATTEMPTS: 5,
-            RECONNECT_DELAY: 3000,
-            isTransitioning: false,
-            slideTimeout: null,
-            screenData: null
-        };
+        let currentContent = null;
+        let currentIndex = 0;
+        let statusTimeout;
+        let ws = null;
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 5;
+        const RECONNECT_DELAY = 3000;
 
-        // Cache do status da tela
-        async function cacheScreenData(data) {
-            appState.screenData = data;
-            console.log('🔄 Cache atualizado:', appState.screenData);
+        function initWebSocket() {
+            if (ws) {
+                ws.close();
+            }
+
+            const port = 4000; // Porta do servidor WebSocket no master
+            ws = new WebSocket(`ws://${window.location.hostname}:${port}`);
+
+            ws.onopen = function() {
+                console.log('WebSocket connection established');
+                reconnectAttempts = 0;
+            };
+
+            ws.onmessage = function(event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('WebSocket message received:', data);
+
+                    if (data.type === 'connected') {
+                        handleConnectionStatus(data);
+                    } else if (data.type === 'registration' || data.type === 'screen_update') {
+                        handleRegistrationUpdate(data);
+                    }
+                } catch (error) {
+                    console.error('Error processing WebSocket message:', error);
+                }
+            };
+
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                ws.close();
+            };
+
+            ws.onclose = function() {
+                console.log('WebSocket connection closed');
+                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                    reconnectAttempts++;
+                    setTimeout(initWebSocket, RECONNECT_DELAY * reconnectAttempts);
+                } else {
+                    console.error('Max reconnection attempts reached');
+                    showConnectionError();
+                }
+            };
         }
 
-        // Funções auxiliares
-        async function getScreenData() {
-            try {
-                if (appState.screenData) {
-                    return appState.screenData;
-                }
-
-                const response = await fetch('/screen-data');
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const data = await response.json();
-                console.log('📱 Dados recebidos:', data);
-                await cacheScreenData(data);
-                return data;
-            } catch (error) {
-                console.error('❌ Erro ao buscar dados:', error);
-                throw error;
+        function handleConnectionStatus(data) {
+            if (data.registered) {
+                showPresentationSection();
+                startPresentation();
+            } else {
+                showRegistrationSection(data);
             }
         }
 
-        function showConnectionError() {
+        function handleRegistrationUpdate(data) {
+            if (data.registered) {
+                showPresentationSection();
+                startPresentation();
+                showSuccessMessage('Conexão estabelecida com sucesso!');
+            } else if (data.action === 'name_update') {
+                // Manter na seção de apresentação ao atualizar o nome
+                showPresentationSection();
+                startPresentation();
+            } else {
+                showRegistrationSection(data);
+            }
+        }
+
+        function showSuccessMessage(message) {
             const statusElement = document.getElementById('connectionStatus');
-            if (statusElement) {
-                statusElement.textContent = 'Erro de conexão';
-                statusElement.classList.add('disconnected');
-                statusElement.classList.remove('connected', 'hidden');
+            statusElement.textContent = message;
+            statusElement.classList.add('connected');
+            statusElement.classList.remove('disconnected');
+            statusElement.classList.remove('hidden');
+
+            // Esconder a mensagem após 5 segundos
+            clearTimeout(statusTimeout);
+            statusTimeout = setTimeout(() => {
+                statusElement.classList.add('hidden');
+            }, 5000);
+        }
+
+        // Inicializar a aplicação com verificação de estado
+        async function initialize() {
+            try {
+                const statusResponse = await fetch('/connection-status');
+                const statusData = await statusResponse.json();
+
+                if (statusData.registered) {
+                    showPresentationSection();
+                    startPresentation();
+                } else {
+                    const screenDataResponse = await fetch('/screen-data');
+                    const screenData = await screenDataResponse.json();
+                    showRegistrationSection(screenData);
+                }
+
+                // Iniciar WebSocket connection depois de verificar o estado
+                initWebSocket();
+            } catch (error) {
+                console.error('Initialization error:', error);
+                showConnectionError();
             }
-            console.error('Erro de conexão com o servidor');
+        }
+
+        function showRegistrationSection(data) {
+            document.getElementById('registrationSection').classList.remove('hidden');
+            document.getElementById('presentationSection').classList.remove('visible');
+            document.getElementById('qrcode').src = `http://localhost:4000/generate-qr?screenId=${data.screenId}`;
+            document.getElementById('pin').textContent = data.pin;
+            document.getElementById('screenId').textContent = data.screenId;
         }
 
         function showPresentationSection() {
@@ -461,252 +571,290 @@
             document.getElementById('presentationSection').classList.add('visible');
         }
 
+        async function checkConnectionStatus() {
+            try {
+                const response = await fetch('/connection-status');
+                const data = await response.json();
+                updateConnectionStatus(data);
+
+                // Se não estiver registrado, limpa o conteúdo e volta para tela de registro
+                if (!data.registered) {
+                    currentContent = null;
+                    document.getElementById('slideContent').innerHTML = '';
+                    document.getElementById('registrationSection').classList.remove('hidden');
+                    document.getElementById('presentationSection').classList.remove('visible');
+                    const screenDataResponse = await fetch('/screen-data');
+                    const screenData = await screenDataResponse.json();
+                    document.getElementById('qrcode').src = `http://localhost:4000/generate-qr?screenId=${screenData.screenId}`;
+                    document.getElementById('pin').textContent = screenData.pin;
+                    document.getElementById('screenId').textContent = screenData.screenId;
+                }
+            } catch (error) {
+                console.error('Erro ao verificar status:', error);
+                showConnectionError();
+            }
+        }
+
         function updateConnectionStatus(data) {
             const statusElement = document.getElementById('connectionStatus');
-            if (!statusElement) return;
             
             if (data.registered) {
-                statusElement.textContent = `Conectado ao Master (${data.masterUrl || 'Unknown'})`;
+                statusElement.textContent = `Conectado ao Master (${data.masterUrl})`;
                 statusElement.classList.add('connected');
                 statusElement.classList.remove('disconnected');
+                
+                // Esconder o status após 5 segundos
+                clearTimeout(statusTimeout);
+                statusTimeout = setTimeout(() => {
+                    statusElement.classList.add('hidden');
+                }, 5000);
             } else {
-                statusElement.textContent = 'Aguardando conexão...';
-                statusElement.classList.remove('connected');
+                statusElement.textContent = 'Aguardando conexão com o Master...';
+                statusElement.classList.remove('connected', 'hidden');
                 statusElement.classList.add('disconnected');
             }
         }
 
-        function showRegistrationSection(data) {
-            if (!data?.pin || !data?.screenId) {
-                console.error('Dados inválidos para registro:', data);
-                return;
-            }
-
-            const registrationSection = document.getElementById('registrationSection');
-            const presentationSection = document.getElementById('presentationSection');
-            
-            if (registrationSection && presentationSection) {
-                registrationSection.classList.remove('hidden');
-                presentationSection.classList.remove('visible');
-                
-                document.getElementById('pin').textContent = data.pin;
-                document.getElementById('screenId').textContent = data.screenId;
-            }
+        function showConnectionError() {
+            const statusElement = document.getElementById('connectionStatus');
+            statusElement.textContent = 'Erro ao verificar conexão';
+            statusElement.classList.add('disconnected');
         }
 
-        // Função para iniciar SSE com o MASTER, não com o slave
-        function initSSE() {
-            if (!appState.screenData) {
-                console.error('❌ Dados da tela não disponíveis para SSE');
-                return;
-            }
-
-            console.log('🔄 Iniciando SSE com o master...');
-            if (appState.eventSource) {
-                console.log('Fechando conexão SSE existente');
-                appState.eventSource.close();
-            }
-
+        // Função para carregar e exibir conteúdo
+        async function loadContent() {
             try {
-                // Conectar ao SSE do master, não do slave
-                appState.eventSource = new EventSource(`${MASTER_URL}/events`);
-
-                appState.eventSource.onopen = () => {
-                    console.log('✅ SSE conectado ao master');
-                    appState.reconnectAttempts = 0;
-                    checkConnectionStatus(); // Verificar status ao conectar
-                };
-
-                appState.eventSource.onmessage = async (event) => {
-                    try {
-                        const data = JSON.parse(event.data);
-                        console.log('📨 Mensagem do master:', data);
-                        
-                        // Verificar se a mensagem é para esta tela
-                        const screenData = await getScreenData();
-                        if (data.screenId && data.screenId !== screenData.screenId) {
-                            console.log('Mensagem ignorada - destinada a outra tela');
-                            return;
-                        }
-
-                        if (data.type === 'screen_update') {
-                            console.log('Atualização de tela recebida:', data);
-                            if (data.registered) {
-                                showPresentationSection();
-                                startPresentation();
-                                showSuccessMessage('Conexão estabelecida com sucesso!');
-                            }
-                            // Atualizar conteúdo se houver
-                            if (data.content) {
-                                appState.currentContent = Array.isArray(data.content) 
-                                    ? data.content 
-                                    : [data.content];
-                                showSlide();
-                            }
-                        }
-                    } catch (error) {
-                        console.error('❌ Erro ao processar mensagem SSE:', error);
-                    }
-                };
-
-                appState.eventSource.onerror = (error) => {
-                    console.error('❌ Erro SSE:', error);
-                    appState.eventSource.close();
+                const response = await fetch('/content');
+                const data = await response.json();
+                
+                if (data.content) {
+                    const contentArray = Array.isArray(data.content) ? data.content : [data.content];
                     
-                    if (appState.reconnectAttempts < appState.MAX_RECONNECT_ATTEMPTS) {
-                        appState.reconnectAttempts++;
-                        const delay = appState.RECONNECT_DELAY * Math.pow(2, appState.reconnectAttempts);
-                        console.log(`🔄 Reconectando em ${delay}ms (${appState.reconnectAttempts}/${appState.MAX_RECONNECT_ATTEMPTS})`);
-                        setTimeout(initSSE, delay);
-                    } else {
-                        console.error('❌ Máximo de tentativas atingido');
-                        showConnectionError();
+                    // Verificar se o conteúdo é diferente antes de atualizar
+                    if (JSON.stringify(currentContent) !== JSON.stringify(contentArray)) {
+                        console.log('Novo conteúdo recebido:', contentArray);
+                        currentContent = contentArray;
+                        currentIndex = 0;
+                        
+                        // Garantir que os elementos existam antes de chamar showSlide
+                        if (document.getElementById('slideContent') && 
+                            document.getElementById('slideContainer')) {
+                            showSlide();
+                        } else {
+                            console.error('Elementos necessários não encontrados');
+                        }
                     }
-                };
+                }
             } catch (error) {
-                console.error('❌ Erro ao iniciar SSE:', error);
+                console.error('Erro ao carregar conteúdo:', error);
             }
         }
 
-        // Move presentation functions to global scope
-        function startPresentation() {
-            console.log('🎬 Iniciando apresentação');
-            if (appState.currentContent) {
-                showSlide();
-            } else {
-                console.log('ℹ️ Nenhum conteúdo para apresentar');
-                showWaitingScreen();
-            }
+        // Add slide transition lock to prevent multiple transitions
+        let isTransitioning = false;
+        let slideTimeout = null;
+
+        // Add this function to fix background image paths
+        function fixBackgroundUrls(content) {
+            return content.replace(
+                /url\(['"]?(\/fundos\/[^'"\)]+)['"]?\)/g, 
+                (match, path) => `url('${MASTER_URL}${path}')`
+            );
         }
 
-        function showSlide() {
-            if (!appState.currentContent) {
+        // Update showSlide function to handle backgrounds
+        async function showSlide() {
+            if (!currentContent || currentContent.length === 0) {
                 showWaitingScreen();
                 return;
             }
 
             const slideContent = document.getElementById('slideContent');
-            if (slideContent) {
-                slideContent.innerHTML = appState.currentContent;
+            if (!slideContent) return;
+
+            // Remove previous content with fade
+            slideContent.classList.remove('in');
+            
+            setTimeout(() => {
+                // Clear previous content
+                slideContent.innerHTML = '';
+
+                // Get and fix current content
+                let content = currentContent[currentIndex];
+                content = fixBackgroundUrls(content);
+
+                // Add new content
+                slideContent.innerHTML = content;
+                
+                // Handle special content
+                handleSpecialContent(slideContent);
+
+                // Fade in new content
+                slideContent.classList.add('in');
+
+                // Schedule next slide
+                if (currentContent.length > 1) {
+                    setTimeout(() => {
+                        currentIndex = (currentIndex + 1) % currentContent.length;
+                        showSlide();
+                    }, 10000);
+                }
+            }, 1000);
+        }
+
+        function handleVideoContent(container) {
+            const videoElement = container.querySelector('video');
+            if (videoElement) {
+                videoElement.muted = true;
+                videoElement.playsInline = true;
+                videoElement.load();
+                
+                const playPromise = videoElement.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        console.log('Video playing successfully');
+                    }).catch(error => {
+                        console.error('Error playing video:', error);
+                        nextSlide();
+                    });
+                }
+
+                videoElement.addEventListener('ended', nextSlide, { once: true });
+
+                // Fallback timer
+                clearTimeout(slideTimeout); // Clear any existing timeout
+                slideTimeout = setTimeout(() => {
+                    if (videoElement.paused && videoElement.currentTime === 0) {
+                        nextSlide();
+                    }
+                }, 5000);
             }
         }
 
-        // Modify initialize function
-        async function initialize() {
-            console.log('=== Inicializando Frontend ===');
-            try {
-                // First check if we have a device ID
-                if (!localStorage.getItem('deviceId')) {
-                    // Generate new device credentials only if none exist
-                    const response = await fetch('/generate-credentials', {
-                        method: 'POST'
-                    });
-                    const data = await response.json();
-                    if (data.success) {
-                        localStorage.setItem('deviceId', data.deviceId);
-                        localStorage.setItem('screenData', JSON.stringify(data));
-                    }
+        // Update handleListContent for smoother animations
+        function handleListContent(container) {
+            if (window.listInterval) {
+                clearInterval(window.listInterval);
+            }
+
+            const listItems = Array.from(container.querySelectorAll('.product-list-item'));
+            let currentListIndex = 0;
+
+            function rotateListItem() {
+                listItems.forEach(item => {
+                    item.classList.remove('active');
+                    item.style.animation = '';
+                });
+                
+                const currentItem = listItems[currentListIndex];
+                currentItem.classList.add('active');
+                currentItem.style.animation = 'slideIn 0.3s ease-out';
+                
+                let imageUrl = currentItem.dataset.imageUrl;
+                if (imageUrl && !imageUrl.startsWith('http')) {
+                    imageUrl = `http://localhost:4000${imageUrl}`;
+                }
+                
+                const featuredImage = container.querySelector('.featured-image');
+                const featuredName = container.querySelector('.featured-name');
+                const featuredPrice = container.querySelector('.featured-price');
+
+                featuredImage.src = imageUrl;
+                featuredImage.onerror = () => {
+                    featuredImage.src = 'http://localhost:4000/uploads/default-product.png';
+                };
+                
+                featuredName.textContent = currentItem.dataset.name;
+                
+                let price = currentItem.dataset.price;
+                try {
+                    price = price.replace('R$', '').trim();
+                    price = parseFloat(price);
+                    featuredPrice.textContent = isNaN(price) ? 'Preço indisponível' : `R$ ${price.toFixed(2)}`;
+                } catch (error) {
+                    console.error('Error parsing price:', error);
+                    featuredPrice.textContent = 'Preço indisponível';
                 }
 
-                // Then get current screen data
-                const screenData = await getScreenData();
-                console.log('📱 Estado inicial:', screenData);
+                currentItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                currentListIndex = (currentListIndex + 1) % listItems.length;
 
-                if (screenData.registered) {
-                    console.log('✅ Tela registrada, iniciando apresentação');
-                    showPresentationSection();
-                    if (screenData.content) {
-                        appState.currentContent = screenData.content;
-                        startPresentation();
-                    } else {
-                        showWaitingScreen();
-                    }
+                if (currentListIndex === 0) {
+                    clearTimeout(slideTimeout); // Clear any existing timeout
+                    slideTimeout = setTimeout(() => {
+                        nextSlide();
+                    }, 5000); // Ensure the last item stays for the full duration
                 } else {
-                    console.log('ℹ️ Tela não registrada, mostrando registro');
-                    showRegistrationSection(screenData);
+                    slideTimeout = setTimeout(rotateListItem, 5000); // Extended display time for list items
                 }
-
-                initSSE();
-            } catch (error) {
-                console.error('❌ Erro na inicialização:', error);
-                // Don't show error immediately, check master connection first
-                checkMasterConnection();
             }
+
+            rotateListItem();
         }
 
-        // Add master connection check
-        async function checkMasterConnection() {
-            try {
-                const response = await fetch(`${MASTER_URL}/screens`);
-                if (!response.ok) {
-                    showConnectionError();
-                    return;
-                }
-                const data = await response.json();
-                const screenData = await getScreenData();
-                
-                const isRegistered = data.screens?.some(s => s.id === screenData.screenId);
-                if (!isRegistered) {
-                    showRegistrationSection(screenData);
-                }
-            } catch (error) {
-                console.error('Master connection failed:', error);
-                showConnectionError();
-            }
+        function nextSlide() {
+            clearTimeout(slideTimeout);
+            currentIndex = (currentIndex + 1) % currentContent.length;
+            isTransitioning = false;
+            showSlide();
         }
 
-        // Melhorar verificação de status
-        async function checkConnectionStatus() {
+        // Modificar a função startPresentation para remover o setInterval adicional
+        function startPresentation() {
+            checkConnectionStatus();
+            loadContent();
+            
+            // Apenas verificar status e conteúdo periodicamente
+            setInterval(checkConnectionStatus, 5000);
+            setInterval(loadContent, 5000);
+            //a
+            // Remover o setInterval do showSlide pois agora é controlado internamente
+        }
+
+        // Inicializar a aplicação
+        initialize();
+
+        // Verificar atualizações de conteúdo periodicamente
+        setInterval(async () => {
             try {
-                const screenData = await getScreenData();
-                const response = await fetch('/connection-status');
+                const response = await fetch('/content');
                 const data = await response.json();
                 
-                // Verificar se os dados correspondem à tela atual
-                if (data.screenId !== screenData.screenId) {
-                    console.warn('❌ ID da tela não corresponde:', {
-                        cached: screenData.screenId,
-                        received: data.screenId
-                    });
-                    return;
-                }
-
-                console.log('📡 Status:', data);
-                updateConnectionStatus(data);
-
-                if (data.registered && data.masterUrl) {
-                    showPresentationSection();
+                if (data.content) {
+                    const contentArray = Array.isArray(data.content) ? data.content : [data.content];
+                    if (JSON.stringify(currentContent) !== JSON.stringify(contentArray)) {
+                        currentContent = contentArray;
+                        currentIndex = 0;
+                        showSlide();
+                    }
                 }
             } catch (error) {
-                console.error('❌ Erro ao verificar status:', error);
+                console.error('Erro ao verificar atualizações de conteúdo:', error);
+            }
+        }, 10000); // Verificar a cada 10 segundos
+
+        document.addEventListener('DOMContentLoaded', () => {
+            setInterval(async () => {
+                try {
+                    const response = await fetch('/connection-status');
+                    const data = await response.json();
+                    const isRegistered = data.registered;
+                    document.getElementById('displayArea').style.display = isRegistered ? 'block' : 'none';
+                    // ...hide or show the registration form accordingly...
+                } catch (error) {
+                    console.error('Error checking registration status:', error);
+                }
+            }, 5000);
+        });
+
+        function handleNewContent(content) {
+            console.log('Novo conteúdo recebido:', content);
+            if (content) {
+                document.getElementById('registrationForm').style.display = 'none';
+                document.getElementById('displayArea').style.display = 'block';
+                // ...load slides or videos here...
             }
         }
-
-        // Iniciar aplicação quando o DOM estiver pronto
-        document.addEventListener('DOMContentLoaded', initialize);
-
-        // Helper functions
-        const utils = {
-            fixImageUrls() {
-                // ...existing code...
-            },
-            fixBackgroundImages() {
-                // ...existing code...
-            }
-        };
-
-        // Observador de mutações para ajuste automático de URLs
-        const observer = new MutationObserver(() => {
-            utils.fixImageUrls();
-            utils.fixBackgroundImages();
-        });
-
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
-
-        // ...rest of existing functions (showSlide, handleVideoContent, etc.)...
     </script>
 </body>
 </html>

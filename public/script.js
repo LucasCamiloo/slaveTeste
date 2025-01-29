@@ -54,19 +54,15 @@ function showWaitingScreen() {
 
 // Update showSlide function to better handle content display
 function showSlide() {
-    console.log('Showing slide:', currentIndex);
-    
     if (!currentContent || currentContent.length === 0) {
-        console.log('No content to display');
         showWaitingScreen();
         return;
     }
 
     const slideContent = document.getElementById('slideContent');
-    if (!slideContent) {
-        console.error('Slide content element not found');
-        return;
-    }
+    if (!slideContent) return;
+
+    console.log('Showing slide:', currentIndex);
 
     // Remove previous content with fade
     slideContent.classList.remove('in');
@@ -75,30 +71,30 @@ function showSlide() {
         try {
             // Get and fix current content
             let content = currentContent[currentIndex];
-            console.log('Current content sample:', content.substring(0, 100) + '...');
+            
+            // Fix background URLs
+            content = content.replace(
+                /background(?:-image)?\s*:\s*url\(['"]?(\/[^'"\)]+)['"]?\)/g,
+                (match, path) => `background: url('${MASTER_URL}${path}')`
+            );
+
+            console.log('Processed content:', content.substring(0, 100) + '...');
 
             // Update content
             slideContent.innerHTML = content;
             
-            // Force layout recalculation
+            // Force reflow
             void slideContent.offsetWidth;
             
             // Add fade in
             slideContent.classList.add('in');
 
-            // Handle special content types
-            if (content.includes('video-container')) {
-                handleVideoContent(slideContent);
-            } else if (content.includes('product-list-item')) {
-                handleListContent(slideContent);
-            } else {
-                // Regular content - schedule next slide
-                if (currentContent.length > 1) {
-                    setTimeout(() => {
-                        currentIndex = (currentIndex + 1) % currentContent.length;
-                        showSlide();
-                    }, 10000);
-                }
+            // Schedule next slide
+            if (currentContent.length > 1) {
+                setTimeout(() => {
+                    currentIndex = (currentIndex + 1) % currentContent.length;
+                    showSlide();
+                }, 10000);
             }
         } catch (error) {
             console.error('Error displaying slide:', error);
@@ -202,13 +198,18 @@ function showRegistrationSection(data) {
     screenIdSpan.textContent = data.screenId;
 }
 
-// Função para mostrar a seção de apresentação
+// Update showPresentationSection function
 function showPresentationSection() {
     const registrationSection = document.getElementById('registrationSection');
     const presentationSection = document.getElementById('presentationSection');
 
     registrationSection.classList.add('hidden');
+    presentationSection.classList.remove('hidden');
     presentationSection.classList.add('visible');
+
+    // Force reflow
+    void presentationSection.offsetWidth;
+    presentationSection.classList.add('in');
 }
 
 // Função para atualizar o status da conexão na interface

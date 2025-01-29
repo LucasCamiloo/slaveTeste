@@ -459,6 +459,36 @@ async function startServer() {
             }
         });
 
+        // Update content endpoints
+        app.get('/content', async (req, res) => {
+            try {
+                const data = await ScreenManager.getData();
+                console.log('📦 Content request - Current data:', {
+                    hasContent: !!data.content,
+                    contentType: typeof data.content,
+                    isArray: Array.isArray(data.content)
+                });
+
+                // Ensure we always return an array
+                let contentToSend = data.content;
+                if (contentToSend) {
+                    contentToSend = Array.isArray(contentToSend) ? contentToSend : [contentToSend];
+                }
+
+                res.json({
+                    content: contentToSend || [],
+                    lastUpdate: data.lastUpdate || new Date()
+                });
+            } catch (error) {
+                console.error('❌ Content fetch error:', error);
+                res.status(500).json({ 
+                    success: false, 
+                    message: error.message,
+                    content: [] 
+                });
+            }
+        });
+
         app.get('/api/products', async (req, res) => {
             try {
                 const products = await Product.find({});

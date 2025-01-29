@@ -469,8 +469,10 @@ function handleListContent(container) {
 
     const listItems = Array.from(container.querySelectorAll('.product-list-item'));
     let currentListIndex = 0;
+    const SECONDS_PER_ITEM = 10;
+    const totalDuration = listItems.length * SECONDS_PER_ITEM * 1000; // Total duration in milliseconds
     
-    console.log(`Starting list rotation with ${listItems.length} items`);
+    console.log(`Starting list rotation with ${listItems.length} items, total duration: ${totalDuration}ms`);
 
     function updateFeaturedProduct(currentItem) {
         // Remove active class from all items
@@ -508,43 +510,33 @@ function handleListContent(container) {
         console.log(`Updated to item ${currentListIndex + 1} of ${listItems.length}`);
     }
 
-    function nextItem() {
-        // Clear any existing timers
-        if (window.listTimeout) clearTimeout(window.listTimeout);
-
+    function rotateList() {
         // Update current item
         updateFeaturedProduct(listItems[currentListIndex]);
-
+        
         // Schedule next item
         window.listTimeout = setTimeout(() => {
             currentListIndex++;
-
-            // If we've shown all items
+            
+            // If we've shown all items, reset to first item
             if (currentListIndex >= listItems.length) {
-                console.log('Completed list cycle, moving to next slide');
-                if (currentContent.length > 1) {
-                    currentIndex = (currentIndex + 1) % currentContent.length;
-                    showSlide();
-                } else {
-                    // If this is the only content, restart the list
-                    currentListIndex = 0;
-                    nextItem();
-                }
-                return;
+                currentListIndex = 0;
             }
-
-            // Continue to next item
-            nextItem();
-        }, 10000); // 10 seconds per item
+            
+            rotateList(); // Continue rotation
+        }, SECONDS_PER_ITEM * 1000);
     }
 
     // Start the rotation
-    nextItem();
+    rotateList();
 
-    // Prevent the normal slide timeout from interrupting
-    if (window.slideTimeout) {
-        clearTimeout(window.slideTimeout);
-    }
+    // Schedule next slide only after showing all items
+    window.slideTimeout = setTimeout(() => {
+        console.log('List rotation complete, moving to next slide');
+        if (window.listTimeout) clearTimeout(window.listTimeout);
+        currentIndex = (currentIndex + 1) % currentContent.length;
+        showSlide();
+    }, totalDuration);
 }
 
 // Update showSlide to better handle list content

@@ -272,11 +272,19 @@ async function checkConnectionStatus() {
         const registeredScreen = screens.find(screen => screen.id === screenData.screenId);
         
         if (!registeredScreen) {
-            console.log('ℹ️ Screen not found on master, showing registration');
-            showRegistrationSection(screenData);
+            console.log('❌ Screen not found in master, resetting state');
+            // Reset local storage and state
+            localStorage.removeItem('screenData');
+            appState.screenData = null;
+            appState.initialized = false;
+            
+            // Fetch new screen data
+            const newData = await getScreenData();
+            showRegistrationSection(newData);
             return;
         }
 
+        // Update UI based on registration status
         if (registeredScreen.registered) {
             console.log('✅ Tela verificada no master:', registeredScreen);
             showPresentationSection();

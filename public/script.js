@@ -469,60 +469,85 @@ function handleListContent(container) {
     const listItems = Array.from(container.querySelectorAll('.product-list-item'));
     let currentListIndex = 0;
     let completedCycles = 0;
-    const CYCLES_BEFORE_NEXT = 1; // Number of complete cycles before moving to next slide
-
-    function rotateListItem() {
-        listItems.forEach(item => item.classList.remove('active'));
-        const currentItem = listItems[currentListIndex];
-        currentItem.classList.add('active');
-        
-        let imageUrl = currentItem.dataset.imageUrl;
-        if (imageUrl) {
-            if (!imageUrl.startsWith('http')) {
-                imageUrl = `${MASTER_URL}${imageUrl}`;
-            }
-        }
-        
+    const CYCLES_BEFORE_NEXT = 1; // Complete one full cycle before next slide
+    
+    function updateFeaturedProduct(currentItem) {
         const featuredImage = container.querySelector('.featured-image');
         const featuredName = container.querySelector('.featured-name');
         const featuredPrice = container.querySelector('.featured-price');
 
+        // Update image
         if (featuredImage) {
+            let imageUrl = currentItem.dataset.imageUrl;
+            if (imageUrl && !imageUrl.startsWith('http')) {
+                imageUrl = `${MASTER_URL}${imageUrl}`;
+            }
             featuredImage.src = imageUrl;
             featuredImage.onerror = () => {
-                console.error('Erro ao carregar imagem:', imageUrl);
+                console.error('Error loading image:', imageUrl);
                 featuredImage.src = `${MASTER_URL}/files/default-product.png`;
             };
         }
-        
-        if (featuredName && currentItem.dataset.name) {
-            featuredName.textContent = currentItem.dataset.name;
-        }
-        if (featuredPrice && currentItem.dataset.price) {
-            featuredPrice.textContent = `R$ ${currentItem.dataset.price}`;
-        }
 
+        // Update name and price
+        if (featuredName) {
+            featuredName.textContent = currentItem.dataset.name || 'No Name';
+        }
+        if (featuredPrice) {
+            featuredPrice.textContent = currentItem.dataset.price || 'Price not available';
+        }
+    }
+
+    function rotateListItem() {
+        console.log('Rotating list item:', { 
+            currentIndex: currentListIndex, 
+            totalItems: listItems.length,
+            cycles: completedCycles 
+        });
+
+        // Remove active class from all items
+        listItems.forEach(item => item.classList.remove('active'));
+
+        // Get current item and activate it
+        const currentItem = listItems[currentListIndex];
+        currentItem.classList.add('active');
+
+        // Update featured product display
+        updateFeaturedProduct(currentItem);
+
+        // Scroll to current item smoothly
+        currentItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        // Calculate next index
         currentListIndex++;
-        
+
         // Check if we completed a cycle
         if (currentListIndex >= listItems.length) {
             currentListIndex = 0;
             completedCycles++;
             
-            // If we've completed all cycles, move to next slide
+            // If we've completed all cycles, schedule next slide
             if (completedCycles >= CYCLES_BEFORE_NEXT && currentContent.length > 1) {
+                console.log('Completed cycle, moving to next slide');
                 clearInterval(window.listInterval);
                 setTimeout(() => {
                     currentIndex = (currentIndex + 1) % currentContent.length;
                     showSlide();
-                }, 2000); // Wait 2 seconds before moving to next slide
+                }, 2000); // Wait 2 seconds before next slide
                 return;
             }
         }
+
+        // Schedule next rotation
+        if (window.listTimeout) {
+            clearTimeout(window.listTimeout);
+        }
+        window.listTimeout = setTimeout(rotateListItem, 5000);
     }
 
+    // Start the rotation
+    console.log('Starting list rotation with', listItems.length, 'items');
     rotateListItem();
-    window.listInterval = setInterval(rotateListItem, 5000); // 5 seconds per item
 }
 
 // Update loadContent function to better handle the response

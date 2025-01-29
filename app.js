@@ -641,29 +641,22 @@ export default startServer();
 
 app.post('/content', async (req, res) => {
     try {
-        const { content, screenId } = req.body;
+        const { content, screenId, replaceExisting } = req.body;
         const data = await ScreenManager.getData();
 
         console.log('Received content update:', {
             forScreen: screenId,
             thisScreen: data.screenId,
-            contentType: typeof content,
-            isArray: Array.isArray(content),
+            replaceExisting: !!replaceExisting,
             contentLength: content ? (Array.isArray(content) ? content.length : 1) : 0
         });
 
-        // Only update if content is for this screen or no screenId specified (broadcast)
+        // Only update if content is for this screen or no screenId specified
         if (!screenId || screenId === data.screenId) {
-            // If content is null, just clear the current content
-            if (content === null) {
-                await ScreenManager.updateContent([]);
-                console.log('Content cleared successfully');
-            } else {
-                // Ensure content is array and update
-                const contentArray = Array.isArray(content) ? content : [content];
-                await ScreenManager.updateContent(contentArray);
-                console.log('Content updated successfully');
-            }
+            // Always replace content instead of appending
+            const contentArray = Array.isArray(content) ? content : [content];
+            await ScreenManager.updateContent(contentArray);
+            console.log('Content updated successfully');
             res.json({ success: true });
         } else {
             console.log('Ignoring content for different screen');

@@ -673,3 +673,76 @@ app.post('/content', async (req, res) => {
         });
     }
 });
+
+// Update screen data endpoint to generate new credentials per device
+app.get('/screen-data', async (req, res) => {
+    try {
+        const deviceId = req.headers['x-device-id'];
+        
+        if (!deviceId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Device ID is required'
+            });
+        }
+
+        // Try to find existing screen data for this device
+        let screenData = await ScreenData.findOne({ deviceId });
+
+        // If no existing data, generate new credentials
+        if (!screenData) {
+            screenData = await ScreenData.create({
+                deviceId,
+                screenId: generateRandomString(8),
+                pin: generateRandomString(4).toUpperCase(),
+                registered: false,
+                content: null,
+                lastUpdate: new Date()
+            });
+            console.log('✨ Generated new screen credentials for device:', deviceId);
+        }
+
+        res.json(screenData);
+    } catch (error) {
+        console.error('Error fetching screen data:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Update content endpoint to handle device-specific content
+app.post('/content', async (req, res) => {
+    try {
+        const { content, screenId } = req.body;
+        const deviceId = req.headers['x-device-id'];
+        const screenData = await ScreenData.findOne({ 
+            deviceId,
+            screenId
+        });
+
+        if (!screenData) {
+            return res.status(404).json({
+                success: false,
+                message: 'Screen not found for this device'
+            });
+        }
+
+        // Update content for this specific screen
+        await ScreenData.findOneAndUpdate(
+            { deviceId, screenId },
+            { 
+                content: Array.isArray(content) ? content : [content],
+                lastUpdate: new Date()
+            }
+        );
+
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});

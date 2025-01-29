@@ -32,40 +32,19 @@ function generateRandomString(length) {
     return result;
 }
 
-// Update screen data management
-const SCREEN_DATA_FILE = 'screenData.json';
+// Add new schema for screen data
+const screenDataSchema = new mongoose.Schema({
+    screenId: String,
+    pin: String,
+    registered: Boolean,
+    content: mongoose.Schema.Types.Mixed,
+    masterUrl: String,
+    lastUpdate: Date
+});
 
-function getOrCreateScreenData() {
-    try {
-        // Always try to load existing data first
-        if (fs.existsSync(SCREEN_DATA_FILE)) {
-            const data = JSON.parse(fs.readFileSync(SCREEN_DATA_FILE));
-            if (data && data.screenId && data.pin) {
-                console.log('📱 Using existing screen data:', data);
-                return data;
-            }
-        }
+const ScreenData = mongoose.model('ScreenData', screenDataSchema);
 
-        // Only create new data if none exists
-        const newData = {
-            screenId: generateRandomString(8),
-            pin: generateRandomString(4).toUpperCase(),
-            registered: false,
-            content: null,
-            lastUpdate: Date.now()
-        };
-
-        // Save new data
-        fs.writeFileSync(SCREEN_DATA_FILE, JSON.stringify(newData, null, 2));
-        console.log('✅ Created new screen data:', newData);
-        return newData;
-    } catch (error) {
-        console.error('❌ Error managing screen data:', error);
-        throw error;
-    }
-}
-
-// Update ScreenManager to ensure data persistence
+// Replace file-based ScreenManager with MongoDB-based one
 const ScreenManager = {
     data: null,
     initialized: false,
@@ -75,25 +54,76 @@ const ScreenManager = {
             return this.data;
         }
 
-        this.data = getOrCreateScreenData();
-        this.initialized = true;
-        return this.data;
+        try {
+            // Try to load existing data from MongoDB
+            let screenData = await ScreenData.findOne();
+            
+            if (!screenData) {
+                // Create new screen data if none exists
+                screenData = await ScreenData.create({
+                    screenId: generateRandomString(8),
+                    pin: generateRandomString(4).toUpperCase(),
+                    registered: false,
+                    content: null,
+                    lastUpdate: new Date()
+                });
+            }
+
+            this.data = screenData.toObject();
+            this.initialized = true;
+            console.log('✅ Screen data initialized:', this.data);
+            return this.data;
+        } catch (error) {
+            console.error('❌ Error initializing screen data:', error);
+            throw error;
+        }
     },
 
-    // Update registration status and persist changes
     async updateRegistrationStatus(registered, masterUrl) {
-        if (!this.data) return;
-        
-        this.data.registered = registered;
-        this.data.masterUrl = masterUrl;
-        this.data.lastUpdate = Date.now();
-        
-        // Save changes to file
         try {
-            fs.writeFileSync(SCREEN_DATA_FILE, JSON.stringify(this.data, null, 2));
-            console.log('🔄 Status updated and saved:', this.data);
+            if (!this.data) return;
+
+            const updateData = {
+                registered,
+                masterUrl,
+                lastUpdate: new Date()
+            };
+
+            // Update in MongoDB
+            await ScreenData.findOneAndUpdate(
+                { screenId: this.data.screenId },
+                updateData,
+                { upsert: true }
+            );
+
+            // Update local cache
+            Object.assign(this.data, updateData);
+            console.log('🔄 Status updated:', this.data);
         } catch (error) {
-            console.error('❌ Error saving status update:', error);
+            console.error('❌ Error updating status:', error);
+            throw error;
+        }
+    },
+
+    async updateContent(content) {
+        try {
+            if (!this.data) return;
+
+            // Update in MongoDB
+            await ScreenData.findOneAndUpdate(
+                { screenId: this.data.screenId },
+                { 
+                    content,
+                    lastUpdate: new Date()
+                }
+            );
+
+            // Update local cache
+            this.data.content = content;
+            this.data.lastUpdate = new Date();
+        } catch (error) {
+            console.error('❌ Error updating content:', error);
+            throw error;
         }
     },
 

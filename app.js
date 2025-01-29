@@ -55,11 +55,11 @@ const ScreenManager = {
         }
 
         try {
-            // Try to load existing data from MongoDB
+            // Try to load existing data from MongoDB first
             let screenData = await ScreenData.findOne();
-            
+
             if (!screenData) {
-                // Create new screen data if none exists
+                // Generate new screen data if none exists
                 screenData = await ScreenData.create({
                     screenId: generateRandomString(8),
                     pin: generateRandomString(4).toUpperCase(),
@@ -67,14 +67,40 @@ const ScreenManager = {
                     content: null,
                     lastUpdate: new Date()
                 });
+                console.log('✨ Created new screen:', screenData);
             }
 
             this.data = screenData.toObject();
             this.initialized = true;
-            console.log('✅ Screen data initialized:', this.data);
             return this.data;
         } catch (error) {
             console.error('❌ Error initializing screen data:', error);
+            throw error;
+        }
+    },
+
+    async resetRegistration() {
+        try {
+            if (!this.data) return;
+
+            await ScreenData.findOneAndUpdate(
+                { screenId: this.data.screenId },
+                {
+                    registered: false,
+                    masterUrl: null,
+                    content: null,
+                    lastUpdate: new Date()
+                }
+            );
+
+            this.data.registered = false;
+            this.data.masterUrl = null;
+            this.data.content = null;
+            this.data.lastUpdate = new Date();
+
+            console.log('🔄 Registration reset:', this.data);
+        } catch (error) {
+            console.error('❌ Error resetting registration:', error);
             throw error;
         }
     },
@@ -256,20 +282,23 @@ async function startServer() {
         }
 
         // Unregister - apenas atualiza status em memória
-        app.post('/unregister', (req, res) => {
+        app.post('/unregister', async (req, res) => {
             try {
                 const { screenId } = req.body;
-                const data = ScreenManager.getData();
+                const data = await ScreenManager.getData();
 
                 if (screenId !== data.screenId) {
-                    return res.status(400).json({ success: false, message: 'Invalid screen ID' });
+                    return res.status(400).json({ 
+                        success: false, 
+                        message: 'Invalid screen ID' 
+                    });
                 }
 
-                ScreenManager.updateRegistrationStatus(false, null);
-                ScreenManager.updateContent(null);
+                await ScreenManager.resetRegistration();
+                console.log('📤 Screen unregistered successfully');
                 res.json({ success: true });
             } catch (error) {
-                console.error('Unregister error:', error);
+                console.error('❌ Unregister error:', error);
                 res.status(500).json({ error: 'Internal server error' });
             }
         });
@@ -473,17 +502,33 @@ async function startServer() {
         // Atualizar rota de status
         app.get('/status', async (req, res) => {
             try {
-                const screen = await Screen.findOne({ id: screenData.screenId })
-                    .select('registered')
-                    .lean();
-                res.json({
-                    operational: screen?.registered || screenData.registered
-                });
+                const data = await ScreenManager.getData();
+                if (!data.registered) {
+                    return res.json({ operational: false });
+                }
+
+                // Check registration with master
+                try {
+                    const response = await fetch(`${data.masterUrl}/screens`);
+                    const masterData = await response.json();
+                    const isRegistered = masterData.screens?.some(
+                        screen => screen.id === data.screenId && screen.registered
+                    );
+
+                    if (!isRegistered) {
+                        console.log('❌ Screen not found in master, resetting registration');
+                        await ScreenManager.resetRegistration();
+                        return res.json({ operational: false });
+                    }
+
+                    return res.json({ operational: true });
+                } catch (error) {
+                    console.error('❌ Error checking master status:', error);
+                    return res.json({ operational: false });
+                }
             } catch (error) {
-                console.error('Erro ao verificar status:', error);
-                res.json({
-                    operational: screenData.registered
-                });
+                console.error('❌ Status check error:', error);
+                res.json({ operational: false });
             }
         });
 

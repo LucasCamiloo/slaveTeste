@@ -746,3 +746,110 @@ app.post('/content', async (req, res) => {
         });
     }
 });
+
+// Update the screen data endpoint to handle both device ID and direct requests
+app.get('/screen-data', async (req, res) => {
+    try {
+        // Get device ID from headers or query params
+        const deviceId = req.headers['x-device-id'] || req.query.deviceId;
+        
+        // First try to get existing screen data
+        let screenData;
+        
+        if (deviceId) {
+            screenData = await ScreenData.findOne({ deviceId });
+        } else {
+            // If no device ID, try to get any existing screen data
+            screenData = await ScreenData.findOne();
+        }
+
+        // If no screen data exists, create new one
+        if (!screenData) {
+            screenData = await ScreenData.create({
+                deviceId: deviceId || generateRandomString(12),
+                screenId: generateRandomString(8),
+                pin: generateRandomString(4).toUpperCase(),
+                registered: false,
+                content: null,
+                lastUpdate: new Date()
+            });
+            console.log('✨ Created new screen data:', screenData);
+        }
+
+        // Remove MongoDB-specific fields before sending
+        const responseData = {
+            screenId: screenData.screenId,
+            pin: screenData.pin,
+            registered: screenData.registered,
+            content: screenData.content,
+            lastUpdate: screenData.lastUpdate
+        };
+
+        console.log('📱 Sending screen data:', responseData);
+        res.json(responseData);
+    } catch (error) {
+        console.error('Error fetching screen data:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Update registration endpoint
+app.post('/register', async (req, res) => {
+    try {
+        const { pin, screenId, masterUrl } = req.body;
+        console.log('📝 Receiving registration:', { pin, screenId, masterUrl });
+
+        if (!pin || !screenId || !masterUrl) {
+            console.error('❌ Invalid data:', { pin, screenId, masterUrl });
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required fields'
+            });
+        }
+
+        // Find screen data by screenId
+        const screenData = await ScreenData.findOne({ screenId });
+        
+        if (!screenData) {
+            console.error('❌ Screen not found:', screenId);
+            return res.status(404).json({
+                success: false,
+                message: 'Screen not found'
+            });
+        }
+
+        if (screenData.pin !== pin) {
+            console.error('❌ Invalid PIN');
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid PIN'
+            });
+        }
+
+        // Update registration status
+        screenData.registered = true;
+        screenData.masterUrl = masterUrl;
+        screenData.lastUpdate = new Date();
+        await screenData.save();
+
+        console.log('✅ Screen registered successfully:', screenData);
+
+        res.json({
+            success: true,
+            message: 'Registration successful',
+            screenId: screenId,
+            registered: true,
+            masterUrl: masterUrl
+        });
+
+    } catch (error) {
+        console.error('❌ Registration error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Internal server error'
+        });
+    }
+});

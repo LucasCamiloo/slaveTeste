@@ -13,6 +13,7 @@ let cachedScreenData = null;
 
 // Update cache management
 const appState = {
+    deviceId: null,
     screenData: null,
     lastFetch: 0,
     cacheTTL: 30000, // 30 seconds
@@ -24,7 +25,12 @@ function generateDeviceId() {
     const storedId = localStorage.getItem('deviceId');
     if (storedId) return storedId;
     
-    const newId = 'device_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    // Generate a more unique ID using timestamp, random string and browser info
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 15);
+    const browserInfo = navigator.userAgent.replace(/[^a-zA-Z0-9]/g, '').substring(0, 10);
+    const newId = `device_${timestamp}_${random}_${browserInfo}`;
+    
     localStorage.setItem('deviceId', newId);
     return newId;
 }
@@ -135,36 +141,50 @@ function handleVideoContent(video) {
 // Enhanced caching function
 async function cacheScreenData() {
     try {
-        // If we have initialized data, just return it
-        if (appState.initialized && appState.screenData) {
+        // Ensure we have a device ID
+        if (!appState.deviceId) {
+            appState.deviceId = generateDeviceId();
+        }
+
+        // If we have fresh cached data, return it
+        if (appState.initialized && appState.screenData && 
+            (Date.now() - appState.lastFetch < appState.cacheTTL)) {
             return appState.screenData;
         }
 
-        // Try to get data from localStorage first
-        const storedData = localStorage.getItem('screenData');
+        // Try to get data from localStorage for this specific device
+        const storedData = localStorage.getItem(`screenData_${appState.deviceId}`);
         if (storedData) {
             const parsedData = JSON.parse(storedData);
             if (parsedData.screenId && parsedData.pin) {
-                console.log('📦 Using stored data:', parsedData);
+                console.log('📦 Using stored data for device:', appState.deviceId, parsedData);
                 appState.screenData = parsedData;
                 appState.initialized = true;
                 return parsedData;
             }
         }
 
-        // If no stored data, fetch from server
-        const response = await fetch('/screen-data');
+        // If no stored data, request new credentials from server
+        const response = await fetch('/screen-data', {
+            method: 'GET',
+            headers: {
+                'X-Device-ID': appState.deviceId
+            }
+        });
+        
         const data = await response.json();
         
         if (!data || !data.screenId) {
             throw new Error('Invalid screen data received');
         }
 
-        // Store the data
-        localStorage.setItem('screenData', JSON.stringify(data));
+        // Store the data specific to this device
+        localStorage.setItem(`screenData_${appState.deviceId}`, JSON.stringify(data));
         appState.screenData = data;
         appState.initialized = true;
-        console.log('🔄 Cache initialized:', appState.screenData);
+        appState.lastFetch = Date.now();
+        
+        console.log('🔄 Cache initialized for device:', appState.deviceId, data);
         return data;
     } catch (error) {
         console.error('❌ Cache update failed:', error);
@@ -602,36 +622,36 @@ function showSlide() {
 // Update loadContent function to better handle the response
 async function loadContent() {
     try {
-        console.log('🔄 Loading content...');
-        const response = await fetch('/content');
+        const screenData = await getScreenData();
+        console.log('🔄 Loading content for screen:', screenData.screenId);
+        
+        const response = await fetch('/content', {
+            headers: {
+                'X-Screen-ID': screenData.screenId,
+                'X-Device-ID': appState.deviceId
+            }
+        });
+        
         const data = await response.json();
         
-        console.log('📦 Content response:', data);
-
         if (!data || !data.content) {
             console.error('❌ No content in response');
             showWaitingScreen();
             return;
         }
 
-        // Handle clearExisting flag if present
-        if (data.clearExisting) {
-            currentContent = null;
-            currentIndex = 0;
+        // Ensure content is only applied if it matches our screen
+        if (data.screenId && data.screenId !== screenData.screenId) {
+            console.log('⚠️ Received content for different screen, ignoring');
+            return;
         }
 
-        // Always treat content as array
         currentContent = Array.isArray(data.content) ? data.content : [data.content];
-
-        // Reset index and show first slide
         currentIndex = 0;
-        if (window.slideTimeout) {
-            clearTimeout(window.slideTimeout);
-        }
         
-        console.log('Content loaded:', {
-            items: currentContent.length,
-            firstItem: currentContent[0]?.substring(0, 100)
+        console.log('Content loaded for screen:', {
+            screenId: screenData.screenId,
+            items: currentContent.length
         });
         
         showSlide();

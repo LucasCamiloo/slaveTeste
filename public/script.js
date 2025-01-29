@@ -229,7 +229,6 @@ function showConnectionError() {
 async function initialize() {
     console.log('=== Initializing Frontend ===');
     try {
-        // First, try to get screen data
         const screenData = await getScreenData();
         console.log('📱 Initial state:', screenData);
 
@@ -237,21 +236,16 @@ async function initialize() {
             throw new Error('Invalid screen data');
         }
 
-        // Check connection status
-        const statusResponse = await fetch('/connection-status');
-        const statusData = await statusResponse.json();
-
-        if (statusData.registered) {
+        if (screenData.registered) {
             console.log('✅ Screen registered, starting presentation');
             showPresentationSection();
-            await loadContent();
+            await loadContent(); // Load initial content
             startPresentation();
         } else {
             console.log('ℹ️ Screen not registered, showing registration');
             showRegistrationSection(screenData);
         }
 
-        // Initialize SSE connection
         initSSE();
     } catch (error) {
         console.error('❌ Initialization error:', error);
@@ -313,31 +307,16 @@ async function handleRegistrationUpdate(data) {
     console.log('🔄 Processando atualização de registro:', data);
 
     try {
-        // Recarregar dados da tela para informações atualizadas
-        await cacheScreenData();
-
-        if (data.screenId && data.screenId !== cachedScreenData.screenId) {
-            console.log('Ignorando atualização para outra tela');
-            return;
-        }
-
-        if (data.registered) {
-            console.log('✅ Tela registrada no master, atualizando interface');
+        const screenData = await getScreenData();
+        
+        if (data.screenId === screenData.screenId && data.registered) {
+            console.log('✅ Screen registered, updating interface');
             showPresentationSection();
+            await loadContent(); // Load content after registration
             startPresentation();
-            updateConnectionStatus({
-                registered: true,
-                masterUrl: data.masterUrl
-            });
-            
-            if (data.content) {
-                currentContent = Array.isArray(data.content) ? data.content : [data.content];
-                currentIndex = 0;
-                showSlide();
-            }
         }
     } catch (error) {
-        console.error('❌ Erro ao processar atualização:', error);
+        console.error('❌ Error processing update:', error);
     }
 }
 
@@ -499,6 +478,41 @@ function handleListContent(container) {
 
     rotateListItem();
     window.listInterval = setInterval(rotateListItem, 10000); // 10 segundos
+}
+
+// Add loadContent function
+async function loadContent() {
+    try {
+        const response = await fetch('/content');
+        const data = await response.json();
+        
+        if (data.content) {
+            // Always convert content to array and fix URLs
+            let contentArray = Array.isArray(data.content) ? data.content : [data.content];
+            
+            // Fix URLs in content
+            contentArray = contentArray.map(content => {
+                return content.replace(
+                    /(src|href)="\/files\//g,
+                    `$1="${MASTER_URL}/files/`
+                ).replace(
+                    /url\(['"]?(\/fundos\/[^'"\)]+)['"]?\)/g,
+                    (match, path) => `url('${MASTER_URL}${path}')`
+                );
+            });
+
+            console.log('📦 Content loaded:', contentArray);
+            currentContent = contentArray;
+            currentIndex = 0;
+            showSlide();
+        } else {
+            console.log('No content available');
+            showWaitingScreen();
+        }
+    } catch (error) {
+        console.error('Error loading content:', error);
+        showWaitingScreen();
+    }
 }
 
 // Chamar initialize quando o DOM estiver pronto

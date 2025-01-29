@@ -598,6 +598,34 @@ async function startServer() {
             }
         });
 
+        // Update screen-data endpoint to generate new credentials on first request
+        app.get('/screen-data', async (req, res) => {
+            try {
+                let screenData = await ScreenData.findOne();
+                
+                // Always generate new credentials if none exist
+                if (!screenData) {
+                    screenData = await ScreenData.create({
+                        screenId: generateRandomString(8),
+                        pin: generateRandomString(4).toUpperCase(),
+                        registered: false,
+                        content: null,
+                        lastUpdate: new Date()
+                    });
+                    console.log('✨ Generated new screen data:', screenData);
+                }
+
+                console.log('📱 Sending screen data:', screenData);
+                res.json(screenData);
+            } catch (error) {
+                console.error('Error fetching screen data:', error);
+                res.status(500).json({ 
+                    success: false, 
+                    message: error.message 
+                });
+            }
+        });
+
         // Add error handling middleware
         app.use((err, req, res, next) => {
             console.error('Error:', err);

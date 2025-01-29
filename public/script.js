@@ -227,28 +227,34 @@ function showConnectionError() {
 
 // Função de inicialização
 async function initialize() {
-    console.log('=== Inicializando Frontend ===');
+    console.log('=== Initializing Frontend ===');
     try {
+        // First, try to get screen data
         const screenData = await getScreenData();
-        console.log('📱 Estado inicial:', screenData);
+        console.log('📱 Initial state:', screenData);
 
-        // Garantir que temos dados válidos
-        if (!screenData || !screenData.screenId) {
-            throw new Error('Dados da tela inválidos');
+        if (!screenData?.screenId) {
+            throw new Error('Invalid screen data');
         }
 
-        if (screenData.registered) {
-            console.log('✅ Tela registrada, iniciando apresentação');
+        // Check connection status
+        const statusResponse = await fetch('/connection-status');
+        const statusData = await statusResponse.json();
+
+        if (statusData.registered) {
+            console.log('✅ Screen registered, starting presentation');
             showPresentationSection();
+            await loadContent();
             startPresentation();
         } else {
-            console.log('ℹ️ Tela não registrada, mostrando registro');
+            console.log('ℹ️ Screen not registered, showing registration');
             showRegistrationSection(screenData);
         }
 
+        // Initialize SSE connection
         initSSE();
     } catch (error) {
-        console.error('❌ Erro na inicialização:', error);
+        console.error('❌ Initialization error:', error);
         showConnectionError();
     }
 }
@@ -496,4 +502,10 @@ function handleListContent(container) {
 }
 
 // Chamar initialize quando o DOM estiver pronto
-document.addEventListener('DOMContentLoaded', initialize);
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('Document ready, initializing...');
+    initialize().catch(error => {
+        console.error('Failed to initialize:', error);
+        showConnectionError();
+    });
+});

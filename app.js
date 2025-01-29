@@ -421,6 +421,44 @@ async function startServer() {
             }
         });
 
+        // Update content endpoint to fetch ad content if available
+        app.get('/content', async (req, res) => {
+            try {
+                const data = await ScreenManager.getData();
+                
+                // If screen has a currentAd, fetch its content from master
+                if (data.currentAd) {
+                    try {
+                        const adResponse = await fetch(`${data.masterUrl}/api/ads/${data.currentAd}`);
+                        const adData = await adResponse.json();
+                        
+                        if (adData.success && adData.ad.content) {
+                            console.log('📺 Fetched ad content for:', data.currentAd);
+                            
+                            // Update content in memory and database
+                            await ScreenManager.updateContent(adData.ad.content);
+                            
+                            return res.json({
+                                content: adData.ad.content,
+                                lastUpdate: new Date()
+                            });
+                        }
+                    } catch (error) {
+                        console.error('Error fetching ad content:', error);
+                    }
+                }
+
+                // Return current content if no ad or if ad fetch fails
+                res.json({
+                    content: data.content,
+                    lastUpdate: data.lastUpdate
+                });
+            } catch (error) {
+                console.error('Content fetch error:', error);
+                res.status(500).json({ error: 'Internal server error' });
+            }
+        });
+
         app.get('/api/products', async (req, res) => {
             try {
                 const products = await Product.find({});

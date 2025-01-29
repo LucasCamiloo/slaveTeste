@@ -529,14 +529,14 @@ function handleListContent(container) {
                 showSlide();
                 return;
             }
-        }, 5000); // 5 seconds per item
+        }, 10000); // 10 seconds per item
     }
 
     // Start the rotation immediately
     rotateListItems();
     
     // Set up the interval for subsequent rotations
-    window.listInterval = setInterval(rotateListItems, 5000);
+    window.listInterval = setInterval(rotateListItems, 10000);
 
     // Prevent the normal slide timeout from interrupting
     if (window.slideTimeout) {

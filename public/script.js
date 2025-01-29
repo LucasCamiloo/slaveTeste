@@ -463,28 +463,27 @@ async function registerScreen() {
 // Função para processar listas de conteúdo
 function handleListContent(container) {
     // Clear any existing timers
-    if (window.listInterval) clearInterval(window.listInterval);
-    if (window.slideTimeout) clearTimeout(window.slideTimeout);
     if (window.listTimeout) clearTimeout(window.listTimeout);
+    if (window.slideTimeout) clearTimeout(window.slideTimeout);
+    if (window.listInterval) clearInterval(window.listInterval);
 
     const listItems = Array.from(container.querySelectorAll('.product-list-item'));
     let currentListIndex = 0;
     
-    console.log('Starting list rotation with', listItems.length, 'items');
+    console.log(`Starting list rotation with ${listItems.length} items`);
 
-    function updateFeaturedProduct(item) {
-        console.log(`Updating product ${currentListIndex + 1} of ${listItems.length}`);
-        
+    function updateFeaturedProduct(currentItem) {
         // Remove active class from all items
-        listItems.forEach(i => i.classList.remove('active'));
-        item.classList.add('active');
+        listItems.forEach(item => item.classList.remove('active'));
+        currentItem.classList.add('active');
 
         const featuredImage = container.querySelector('.featured-image');
         const featuredName = container.querySelector('.featured-name');
         const featuredPrice = container.querySelector('.featured-price');
 
+        // Update image
         if (featuredImage) {
-            let imageUrl = item.dataset.imageUrl;
+            let imageUrl = currentItem.dataset.imageUrl;
             if (imageUrl && !imageUrl.startsWith('http')) {
                 imageUrl = `${MASTER_URL}${imageUrl}`;
             }
@@ -495,41 +494,57 @@ function handleListContent(container) {
             };
         }
 
+        // Update text content
         if (featuredName) {
-            featuredName.textContent = item.dataset.name || 'Sem nome';
+            featuredName.textContent = currentItem.dataset.name || 'Sem nome';
         }
         if (featuredPrice) {
-            featuredPrice.textContent = item.dataset.price || 'Preço indisponível';
+            featuredPrice.textContent = currentItem.dataset.price || 'Preço indisponível';
         }
 
-        item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        // Scroll into view
+        currentItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        
+        console.log(`Updated to item ${currentListIndex + 1} of ${listItems.length}`);
     }
 
-    function rotateList() {
+    function nextItem() {
+        // Clear any existing timers
+        if (window.listTimeout) clearTimeout(window.listTimeout);
+
         // Update current item
         updateFeaturedProduct(listItems[currentListIndex]);
-        
-        // Schedule next update
+
+        // Schedule next item
         window.listTimeout = setTimeout(() => {
             currentListIndex++;
-            
-            // If we've shown all items, start over
+
+            // If we've shown all items
             if (currentListIndex >= listItems.length) {
-                currentListIndex = 0;
-                // Optional: move to next content if available
+                console.log('Completed list cycle, moving to next slide');
                 if (currentContent.length > 1) {
                     currentIndex = (currentIndex + 1) % currentContent.length;
                     showSlide();
-                    return;
+                } else {
+                    // If this is the only content, restart the list
+                    currentListIndex = 0;
+                    nextItem();
                 }
+                return;
             }
-            
-            rotateList(); // Continue the rotation
+
+            // Continue to next item
+            nextItem();
         }, 10000); // 10 seconds per item
     }
 
     // Start the rotation
-    rotateList();
+    nextItem();
+
+    // Prevent the normal slide timeout from interrupting
+    if (window.slideTimeout) {
+        clearTimeout(window.slideTimeout);
+    }
 }
 
 // Update showSlide to better handle list content
@@ -542,12 +557,12 @@ function showSlide() {
     const slideContent = document.getElementById('slideContent');
     if (!slideContent) return;
 
-    // Clear any existing timers
+    // Clear all existing timers
     if (window.slideTimeout) clearTimeout(window.slideTimeout);
     if (window.listTimeout) clearTimeout(window.listTimeout);
     if (window.listInterval) clearInterval(window.listInterval);
 
-    console.log('Showing slide:', currentIndex + 1, 'of', currentContent.length);
+    console.log(`Showing slide ${currentIndex + 1} of ${currentContent.length}`);
 
     // Remove previous content with fade
     slideContent.classList.remove('in');
@@ -581,8 +596,7 @@ function showSlide() {
             }
         } catch (error) {
             console.error('Error displaying slide:', error);
-            console.log('Restarting presentation...');
-            currentIndex = 0;
+            currentIndex = (currentIndex + 1) % currentContent.length;
             showSlide();
         }
     }, 1000);

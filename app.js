@@ -325,41 +325,31 @@ async function startServer() {
         app.post('/content', async (req, res) => {
             try {
                 const { content, screenId } = req.body;
+                const data = await ScreenManager.getData();
 
-                // Garantir que o conteúdo seja apenas para esta tela específica
-                if (screenId !== screenData.screenId) {
-                    console.log(`Ignorando conteúdo destinado à tela ${screenId} (esta tela é ${screenData.screenId})`);
-                    return res.json({ 
+                console.log('Received content update:', {
+                    forScreen: screenId,
+                    thisScreen: data.screenId,
+                    contentLength: content ? content.length : 0
+                });
+
+                // Only update if content is for this screen or no screenId specified (broadcast)
+                if (!screenId || screenId === data.screenId) {
+                    await ScreenManager.updateContent(content);
+                    console.log('Content updated successfully');
+                    res.json({ success: true });
+                } else {
+                    console.log('Ignoring content for different screen');
+                    res.json({ 
                         success: true, 
                         message: 'Content ignored - wrong screen' 
                     });
                 }
-
-                if (content) {
-                    // Atualizar conteúdo apenas se for para esta tela
-                    screenData.content = content;
-                    screenData.lastUpdate = Date.now();
-
-                    // Atualizar banco de dados
-                    await Screen.findOneAndUpdate(
-                        { id: screenData.screenId },
-                        { 
-                            content: content,
-                            lastUpdate: Date.now()
-                        },
-                        { new: true, upsert: true }
-                    );
-
-                    console.log(`Conteúdo atualizado para tela ${screenData.screenId}`);
-                }
-                
-                res.json({ success: true });
             } catch (error) {
                 console.error('Error updating content:', error);
                 res.status(500).json({ 
                     success: false, 
-                    message: 'Error updating content',
-                    error: error.message
+                    message: error.message 
                 });
             }
         });

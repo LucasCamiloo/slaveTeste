@@ -462,23 +462,19 @@ async function registerScreen() {
 
 // Função para processar listas de conteúdo
 function handleListContent(container) {
-    // Clear any existing intervals
-    if (window.listInterval) {
-        clearInterval(window.listInterval);
-    }
-    if (window.slideTimeout) {
-        clearTimeout(window.slideTimeout);
-    }
+    // Clear any existing timers
+    if (window.listInterval) clearInterval(window.listInterval);
+    if (window.slideTimeout) clearTimeout(window.slideTimeout);
+    if (window.listTimeout) clearTimeout(window.listTimeout);
 
     const listItems = Array.from(container.querySelectorAll('.product-list-item'));
     let currentListIndex = 0;
-    let isTransitioning = false;
-
+    
     console.log('Starting list rotation with', listItems.length, 'items');
 
     function updateFeaturedProduct(item) {
-        console.log('Updating featured product:', currentListIndex + 1, 'of', listItems.length);
-
+        console.log(`Updating product ${currentListIndex + 1} of ${listItems.length}`);
+        
         // Remove active class from all items
         listItems.forEach(i => i.classList.remove('active'));
         item.classList.add('active');
@@ -506,45 +502,37 @@ function handleListContent(container) {
             featuredPrice.textContent = item.dataset.price || 'Preço indisponível';
         }
 
-        // Scroll the item into view
         item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    function rotateListItems() {
-        if (isTransitioning) return;
-        isTransitioning = true;
-
+    function rotateList() {
+        // Update current item
         updateFeaturedProduct(listItems[currentListIndex]);
-
-        // Schedule next item or move to next slide
-        setTimeout(() => {
-            isTransitioning = false;
+        
+        // Schedule next update
+        window.listTimeout = setTimeout(() => {
             currentListIndex++;
-
+            
+            // If we've shown all items, start over
             if (currentListIndex >= listItems.length) {
-                // Completed one full cycle, move to next slide
-                console.log('Completed list cycle, moving to next slide');
-                clearInterval(window.listInterval);
-                currentIndex = (currentIndex + 1) % currentContent.length;
-                showSlide();
-                return;
+                currentListIndex = 0;
+                // Optional: move to next content if available
+                if (currentContent.length > 1) {
+                    currentIndex = (currentIndex + 1) % currentContent.length;
+                    showSlide();
+                    return;
+                }
             }
+            
+            rotateList(); // Continue the rotation
         }, 10000); // 10 seconds per item
     }
 
-    // Start the rotation immediately
-    rotateListItems();
-    
-    // Set up the interval for subsequent rotations
-    window.listInterval = setInterval(rotateListItems, 10000);
-
-    // Prevent the normal slide timeout from interrupting
-    if (window.slideTimeout) {
-        clearTimeout(window.slideTimeout);
-    }
+    // Start the rotation
+    rotateList();
 }
 
-// Update showSlide to better handle special content
+// Update showSlide to better handle list content
 function showSlide() {
     if (!currentContent || !Array.isArray(currentContent) || currentContent.length === 0) {
         showWaitingScreen();
@@ -554,15 +542,12 @@ function showSlide() {
     const slideContent = document.getElementById('slideContent');
     if (!slideContent) return;
 
-    console.log('Showing slide:', currentIndex + 1, 'of', currentContent.length);
+    // Clear any existing timers
+    if (window.slideTimeout) clearTimeout(window.slideTimeout);
+    if (window.listTimeout) clearTimeout(window.listTimeout);
+    if (window.listInterval) clearInterval(window.listInterval);
 
-    // Clear any existing timeouts
-    if (window.slideTimeout) {
-        clearTimeout(window.slideTimeout);
-    }
-    if (window.listInterval) {
-        clearInterval(window.listInterval);
-    }
+    console.log('Showing slide:', currentIndex + 1, 'of', currentContent.length);
 
     // Remove previous content with fade
     slideContent.classList.remove('in');
@@ -584,11 +569,11 @@ function showSlide() {
             void slideContent.offsetWidth;
             slideContent.classList.add('in');
 
-            // Check if this is a list layout
+            // Handle content based on type
             if (content.includes('product-list-item')) {
                 handleListContent(slideContent);
             } else {
-                // For non-list slides, schedule next slide
+                // For non-list slides
                 window.slideTimeout = setTimeout(() => {
                     currentIndex = (currentIndex + 1) % currentContent.length;
                     showSlide();
@@ -596,7 +581,9 @@ function showSlide() {
             }
         } catch (error) {
             console.error('Error displaying slide:', error);
-            showWaitingScreen();
+            console.log('Restarting presentation...');
+            currentIndex = 0;
+            showSlide();
         }
     }, 1000);
 }

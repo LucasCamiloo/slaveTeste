@@ -62,7 +62,12 @@ function showSlide() {
     const slideContent = document.getElementById('slideContent');
     if (!slideContent) return;
 
-    console.log('Showing slide:', currentIndex, 'Content type:', typeof currentContent[currentIndex]);
+    console.log('Showing slide:', currentIndex, 'Total slides:', currentContent.length);
+
+    // Clear any existing timeout
+    if (window.slideTimeout) {
+        clearTimeout(window.slideTimeout);
+    }
 
     // Remove previous content with fade
     slideContent.classList.remove('in');
@@ -72,10 +77,16 @@ function showSlide() {
             // Get current content from array
             let content = currentContent[currentIndex];
             
-            // Fix background URLs if needed
+            // Fix background URLs
             content = content.replace(
-                /background(?:-image)?\s*:\s*url\(['"]?(\/[^'"\)]+)['"]?\)/g,
+                /background(?:-image)?\s*:\s*url\(['"]?((?:\/fundos\/|\/files\/)[^'"\)]+)['"]?\)/g,
                 (match, path) => `background: url('${MASTER_URL}${path}')`
+            );
+
+            // Fix image URLs
+            content = content.replace(
+                /src="((?:\/fundos\/|\/files\/)[^"]+)"/g,
+                `src="${MASTER_URL}$1"`
             );
 
             // Update content
@@ -87,11 +98,10 @@ function showSlide() {
             // Add fade in
             slideContent.classList.add('in');
 
-            // Always schedule next slide, regardless of content length
-            setTimeout(() => {
-                // Update index and ensure it loops back to start
+            // Schedule next slide with clear timeout protection
+            window.slideTimeout = setTimeout(() => {
                 currentIndex = (currentIndex + 1) % currentContent.length;
-                showSlide(); // Call showSlide again to continue the loop
+                showSlide();
             }, 10000);
 
         } catch (error) {
@@ -590,7 +600,11 @@ async function loadContent() {
             firstItem: currentContent[0]?.substring(0, 100)
         });
 
+        // Reset index and clear any existing timeout
         currentIndex = 0;
+        if (window.slideTimeout) {
+            clearTimeout(window.slideTimeout);
+        }
         showSlide();
     } catch (error) {
         console.error('❌ Error loading content:', error);

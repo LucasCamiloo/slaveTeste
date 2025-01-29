@@ -468,6 +468,8 @@ function handleListContent(container) {
 
     const listItems = Array.from(container.querySelectorAll('.product-list-item'));
     let currentListIndex = 0;
+    let completedCycles = 0;
+    const CYCLES_BEFORE_NEXT = 1; // Number of complete cycles before moving to next slide
 
     function rotateListItem() {
         listItems.forEach(item => item.classList.remove('active'));
@@ -476,13 +478,8 @@ function handleListContent(container) {
         
         let imageUrl = currentItem.dataset.imageUrl;
         if (imageUrl) {
-            // Usar apenas URLs do GridFS
-            if (!imageUrl.startsWith('/files/')) {
-                console.error('URL inválida:', imageUrl);
-                imageUrl = '/files/default-product.png';
-            }
             if (!imageUrl.startsWith('http')) {
-                imageUrl = `http://localhost:4000${imageUrl}`;
+                imageUrl = `${MASTER_URL}${imageUrl}`;
             }
         }
         
@@ -494,11 +491,10 @@ function handleListContent(container) {
             featuredImage.src = imageUrl;
             featuredImage.onerror = () => {
                 console.error('Erro ao carregar imagem:', imageUrl);
-                featuredImage.src = 'http://localhost:4000/files/default-product.png';
+                featuredImage.src = `${MASTER_URL}/files/default-product.png`;
             };
         }
         
-        // Atualizar nome e preço, se necessário
         if (featuredName && currentItem.dataset.name) {
             featuredName.textContent = currentItem.dataset.name;
         }
@@ -506,11 +502,27 @@ function handleListContent(container) {
             featuredPrice.textContent = `R$ ${currentItem.dataset.price}`;
         }
 
-        currentListIndex = (currentListIndex + 1) % listItems.length;
+        currentListIndex++;
+        
+        // Check if we completed a cycle
+        if (currentListIndex >= listItems.length) {
+            currentListIndex = 0;
+            completedCycles++;
+            
+            // If we've completed all cycles, move to next slide
+            if (completedCycles >= CYCLES_BEFORE_NEXT && currentContent.length > 1) {
+                clearInterval(window.listInterval);
+                setTimeout(() => {
+                    currentIndex = (currentIndex + 1) % currentContent.length;
+                    showSlide();
+                }, 2000); // Wait 2 seconds before moving to next slide
+                return;
+            }
+        }
     }
 
     rotateListItem();
-    window.listInterval = setInterval(rotateListItem, 10000); // 10 segundos
+    window.listInterval = setInterval(rotateListItem, 5000); // 5 seconds per item
 }
 
 // Update loadContent function to better handle the response
@@ -522,85 +534,32 @@ async function loadContent() {
         
         console.log('📦 Content response:', data);
 
-        if (!data) {
-            console.error('❌ No data received');
+        if (!data || !data.content) {
+            console.error('❌ No content in response');
             showWaitingScreen();
             return;
         }
 
-        // Handle null content case
-        if (data.content === null) {
-            console.log('ℹ️ No content available yet');
-            showWaitingScreen();
-            return;
+        // Handle clearExisting flag if present
+        if (data.clearExisting) {
+            currentContent = null;
+            currentIndex = 0;
         }
 
-        // Normalize content to array
-        let contentToUse = data.content;
-        
-        // If content is a string, wrap it in array
-        if (typeof contentToUse === 'string') {
-            contentToUse = [contentToUse];
-        } 
-        // If content is already an array, use it directly
-        else if (Array.isArray(contentToUse)) {
-            // Keep as is
-        } 
-        // If content is undefined or invalid type, show waiting screen
-        else {
-            console.error('❌ Invalid content type:', typeof contentToUse);
-            showWaitingScreen();
-            return;
-        }
+        // Always treat content as array
+        currentContent = Array.isArray(data.content) ? data.content : [data.content];
 
-        console.log('📦 Processing content:', {
-            type: typeof contentToUse,
-            isArray: Array.isArray(contentToUse),
-            length: contentToUse.length,
-            sample: contentToUse[0]?.substring(0, 100)
-        });
-
-        // Process content items
-        currentContent = contentToUse.map(item => {
-            if (typeof item !== 'string') {
-                console.error('❌ Invalid content item:', item);
-                return '';
-            }
-
-            // Fix URLs in content
-            let processed = item;
-            
-            // Fix image URLs
-            processed = processed.replace(
-                /(src|href)="\/files\//g,
-                `$1="${MASTER_URL}/files/`
-            );
-            
-            // Fix background image URLs
-            processed = processed.replace(
-                /background(?:-image)?\s*:\s*url\(['"]?(\/[^'"\)]+)['"]?\)/g,
-                (match, path) => `background: url('${MASTER_URL}${path}')`
-            );
-
-            return processed;
-        }).filter(Boolean);
-
-        if (currentContent.length === 0) {
-            console.error('❌ No valid content items after processing');
-            showWaitingScreen();
-            return;
-        }
-
-        console.log('✅ Content loaded successfully:', {
-            itemCount: currentContent.length,
-            firstItem: currentContent[0]?.substring(0, 100)
-        });
-
-        // Reset index and clear any existing timeout
+        // Reset index and show first slide
         currentIndex = 0;
         if (window.slideTimeout) {
             clearTimeout(window.slideTimeout);
         }
+        
+        console.log('Content loaded:', {
+            items: currentContent.length,
+            firstItem: currentContent[0]?.substring(0, 100)
+        });
+        
         showSlide();
     } catch (error) {
         console.error('❌ Error loading content:', error);

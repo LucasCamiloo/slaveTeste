@@ -510,51 +510,79 @@ function handleListContent(container) {
 // Update loadContent function to properly handle ad content
 async function loadContent() {
     try {
-        console.log('Loading content...');
+        console.log('🔄 Loading content...');
         const response = await fetch('/content');
         const data = await response.json();
         
-        if (data.content) {
-            // Always convert content to array and fix URLs
-            let contentArray = Array.isArray(data.content) ? data.content : [data.content];
-            
-            // Fix URLs in content
-            contentArray = contentArray.map(content => {
-                // Fix image URLs
-                let fixedContent = content.replace(
-                    /(src|href)="\/files\//g,
-                    `$1="${MASTER_URL}/files/`
-                );
-                
-                // Fix background image URLs
-                fixedContent = fixedContent.replace(
-                    /background(?:-image)?\s*:\s*url\(['"]?(\/[^'"\)]+)['"]?\)/g,
-                    (match, path) => `background: url('${MASTER_URL}${path}')`
-                );
+        console.log('📦 Content response:', data);  // Debug log
 
-                return fixedContent;
-            });
-
-            console.log('📦 Content loaded:', {
-                contentCount: contentArray.length,
-                firstContent: contentArray[0]?.substring(0, 100) + '...'
-            });
-
-            currentContent = contentArray;
-            currentIndex = 0;
-
-            // Immediately show content when loaded
-            if (currentContent && currentContent.length > 0) {
-                showSlide();
-            } else {
-                showWaitingScreen();
-            }
-        } else {
-            console.log('No content available');
+        if (!data) {
+            console.error('❌ No data received from content endpoint');
             showWaitingScreen();
+            return;
         }
+
+        // Check both content and content[0] for array handling
+        let contentToUse = data.content;
+        console.log('Content type:', typeof contentToUse, 'Is array?', Array.isArray(contentToUse));
+
+        if (!contentToUse) {
+            console.error('❌ No content in response');
+            showWaitingScreen();
+            return;
+        }
+
+        // Convert to array if it's not already
+        contentToUse = Array.isArray(contentToUse) ? contentToUse : [contentToUse];
+        
+        // Verify content isn't empty after conversion
+        if (contentToUse.length === 0) {
+            console.error('❌ Content array is empty');
+            showWaitingScreen();
+            return;
+        }
+
+        console.log('📦 Processing content:', {
+            itemCount: contentToUse.length,
+            firstItem: contentToUse[0]?.substring(0, 100) + '...'
+        });
+
+        // Fix URLs in content
+        currentContent = contentToUse.map(content => {
+            if (typeof content !== 'string') {
+                console.error('❌ Invalid content item:', content);
+                return '';
+            }
+
+            // Fix image URLs
+            let fixedContent = content.replace(
+                /(src|href)="\/files\//g,
+                `$1="${MASTER_URL}/files/`
+            );
+            
+            // Fix background image URLs
+            fixedContent = fixedContent.replace(
+                /background(?:-image)?\s*:\s*url\(['"]?(\/[^'"\)]+)['"]?\)/g,
+                (match, path) => `background: url('${MASTER_URL}${path}')`
+            );
+
+            return fixedContent;
+        }).filter(content => content); // Remove empty items
+
+        if (currentContent.length === 0) {
+            console.error('❌ No valid content items after processing');
+            showWaitingScreen();
+            return;
+        }
+
+        console.log('✅ Content loaded successfully:', {
+            itemCount: currentContent.length
+        });
+
+        currentIndex = 0;
+        showSlide();
     } catch (error) {
-        console.error('Error loading content:', error);
+        console.error('❌ Error loading content:', error);
         showWaitingScreen();
     }
 }

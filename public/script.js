@@ -77,26 +77,13 @@ function showSlide() {
             // Get current content from array
             let content = currentContent[currentIndex];
             
-            // Fix background URLs - updated pattern to match all variations
+            // Fix localhost and relative URLs for background images and other assets
             content = content.replace(
-                /background(?:-image)?\s*:\s*url\(['"]?((?:\/fundos\/|\/files\/)[^'"\)]+)['"]?\)/g,
-                (match, path) => {
-                    console.log('Fixing background URL:', path);
-                    return `background: url('${MASTER_URL}${path}')`;
-                }
+                /background(?:-image)?\s*:\s*url\(['"]?(?:http:\/\/localhost:\d+)?(\/[^'"\)]+)['"]?\)/g,
+                (match, path) => `background: url('${MASTER_URL}${path}')`
             );
 
-            // Fix image URLs - updated to handle both fundos and files
-            content = content.replace(
-                /src=["']((?:\/fundos\/|\/files\/)[^"']+)["']/g,
-                (match, path) => {
-                    console.log('Fixing image URL:', path);
-                    return `src="${MASTER_URL}${path}"`;
-                }
-            );
-
-            // Log the processed content
-            console.log('Processed content:', content.substring(0, 200) + '...');
+            console.log('Content after URL fix:', content.substring(0, 200));
 
             // Update content
             slideContent.innerHTML = content;

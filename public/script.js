@@ -54,7 +54,7 @@ function showWaitingScreen() {
 
 // Update showSlide function to better handle content display
 function showSlide() {
-    if (!currentContent || currentContent.length === 0) {
+    if (!currentContent || !Array.isArray(currentContent) || currentContent.length === 0) {
         showWaitingScreen();
         return;
     }
@@ -62,23 +62,21 @@ function showSlide() {
     const slideContent = document.getElementById('slideContent');
     if (!slideContent) return;
 
-    console.log('Showing slide:', currentIndex);
+    console.log('Showing slide:', currentIndex, 'Content type:', typeof currentContent[currentIndex]);
 
     // Remove previous content with fade
     slideContent.classList.remove('in');
     
     setTimeout(() => {
         try {
-            // Get and fix current content
+            // Get current content from array
             let content = currentContent[currentIndex];
             
-            // Fix background URLs
+            // Fix background URLs if needed
             content = content.replace(
                 /background(?:-image)?\s*:\s*url\(['"]?(\/[^'"\)]+)['"]?\)/g,
                 (match, path) => `background: url('${MASTER_URL}${path}')`
             );
-
-            console.log('Processed content:', content.substring(0, 100) + '...');
 
             // Update content
             slideContent.innerHTML = content;
@@ -89,7 +87,7 @@ function showSlide() {
             // Add fade in
             slideContent.classList.add('in');
 
-            // Schedule next slide
+            // Schedule next slide if there are multiple slides
             if (currentContent.length > 1) {
                 setTimeout(() => {
                     currentIndex = (currentIndex + 1) % currentContent.length;
@@ -98,6 +96,7 @@ function showSlide() {
             }
         } catch (error) {
             console.error('Error displaying slide:', error);
+            console.error('Content:', currentContent[currentIndex]);
             showWaitingScreen();
         }
     }, 1000);

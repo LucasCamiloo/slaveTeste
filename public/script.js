@@ -507,67 +507,77 @@ function handleListContent(container) {
     window.listInterval = setInterval(rotateListItem, 10000); // 10 segundos
 }
 
-// Update loadContent function to properly handle ad content
+// Update loadContent function to better handle the response
 async function loadContent() {
     try {
         console.log('🔄 Loading content...');
         const response = await fetch('/content');
         const data = await response.json();
         
-        console.log('📦 Content response:', data);  // Debug log
+        console.log('📦 Content response:', data);
 
         if (!data) {
-            console.error('❌ No data received from content endpoint');
+            console.error('❌ No data received');
             showWaitingScreen();
             return;
         }
 
-        // Check both content and content[0] for array handling
+        // Handle null content case
+        if (data.content === null) {
+            console.log('ℹ️ No content available yet');
+            showWaitingScreen();
+            return;
+        }
+
+        // Normalize content to array
         let contentToUse = data.content;
-        console.log('Content type:', typeof contentToUse, 'Is array?', Array.isArray(contentToUse));
-
-        if (!contentToUse) {
-            console.error('❌ No content in response');
-            showWaitingScreen();
-            return;
-        }
-
-        // Convert to array if it's not already
-        contentToUse = Array.isArray(contentToUse) ? contentToUse : [contentToUse];
         
-        // Verify content isn't empty after conversion
-        if (contentToUse.length === 0) {
-            console.error('❌ Content array is empty');
+        // If content is a string, wrap it in array
+        if (typeof contentToUse === 'string') {
+            contentToUse = [contentToUse];
+        } 
+        // If content is already an array, use it directly
+        else if (Array.isArray(contentToUse)) {
+            // Keep as is
+        } 
+        // If content is undefined or invalid type, show waiting screen
+        else {
+            console.error('❌ Invalid content type:', typeof contentToUse);
             showWaitingScreen();
             return;
         }
 
         console.log('📦 Processing content:', {
-            itemCount: contentToUse.length,
-            firstItem: contentToUse[0]?.substring(0, 100) + '...'
+            type: typeof contentToUse,
+            isArray: Array.isArray(contentToUse),
+            length: contentToUse.length,
+            sample: contentToUse[0]?.substring(0, 100)
         });
 
-        // Fix URLs in content
-        currentContent = contentToUse.map(content => {
-            if (typeof content !== 'string') {
-                console.error('❌ Invalid content item:', content);
+        // Process content items
+        currentContent = contentToUse.map(item => {
+            if (typeof item !== 'string') {
+                console.error('❌ Invalid content item:', item);
                 return '';
             }
 
+            // Fix URLs in content
+            let processed = item;
+            
             // Fix image URLs
-            let fixedContent = content.replace(
+            processed = processed.replace(
                 /(src|href)="\/files\//g,
                 `$1="${MASTER_URL}/files/`
             );
             
             // Fix background image URLs
-            fixedContent = fixedContent.replace(
+            processed = processed.replace(
                 /background(?:-image)?\s*:\s*url\(['"]?(\/[^'"\)]+)['"]?\)/g,
                 (match, path) => `background: url('${MASTER_URL}${path}')`
             );
 
-            return fixedContent;
-        }).filter(content => content); // Remove empty items
+            return processed;
+        }).filter(Boolean);
 
         if (currentContent.length === 0) {
             console.error('❌ No valid content items after processing');
@@ -576,7 +586,8 @@ async function loadContent() {
         }
 
         console.log('✅ Content loaded successfully:', {
-            itemCount: currentContent.length
+            itemCount: currentContent.length,
+            firstItem: currentContent[0]?.substring(0, 100)
         });
 
         currentIndex = 0;

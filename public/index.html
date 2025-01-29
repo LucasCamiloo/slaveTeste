@@ -445,15 +445,40 @@
     </div>
 
     <script>
+        // Remove all WebSocket related code and variables
         let currentContent = null;
         let currentIndex = 0;
         let statusTimeout;
+        let eventSource = null;
         let reconnectAttempts = 0;
         const MAX_RECONNECT_ATTEMPTS = 5;
         const RECONNECT_DELAY = 3000;
-        let eventSource = null;
 
-        // Remove all WebSocket code and use SSE
+        // Update initialize function to use SSE
+        async function initialize() {
+            try {
+                const statusResponse = await fetch('/connection-status');
+                const statusData = await statusResponse.json();
+
+                if (statusData.registered) {
+                    showPresentationSection();
+                    await loadContent(); // Load initial content
+                    startPresentation();
+                } else {
+                    const screenDataResponse = await fetch('/screen-data');
+                    const screenData = await screenDataResponse.json();
+                    showRegistrationSection(screenData);
+                }
+
+                // Initialize SSE instead of WebSocket
+                initSSE();
+            } catch (error) {
+                console.error('Initialization error:', error);
+                showConnectionError();
+            }
+        }
+
+        // Update SSE initialization
         function initSSE() {
             if (eventSource) {
                 eventSource.close();
@@ -502,30 +527,7 @@
             };
         }
 
-        // Update initialize function
-        async function initialize() {
-            try {
-                const screenData = await getScreenData();
-                console.log('📱 Initial state:', screenData);
-
-                if (screenData.registered) {
-                    console.log('✅ Screen registered, starting presentation');
-                    showPresentationSection();
-                    await loadContent(); // Load initial content
-                    startPresentation();
-                } else {
-                    console.log('ℹ️ Screen not registered, showing registration');
-                    showRegistrationSection(screenData);
-                }
-
-                initSSE();
-            } catch (error) {
-                console.error('❌ Initialization error:', error);
-                showConnectionError();
-            }
-        }
-
-        // Update content loading function
+        // Update loadContent function
         async function loadContent() {
             try {
                 const response = await fetch('/content');
@@ -541,7 +543,7 @@
             }
         }
 
-        // Update showSlide function
+        // Update showSlide to handle background URLs
         function showSlide() {
             if (!currentContent || currentContent.length === 0) {
                 showWaitingScreen();
@@ -559,10 +561,7 @@
             setTimeout(() => {
                 // Update content with background fix
                 let content = currentContent[currentIndex];
-                content = content.replace(
-                    /url\(['"]?(\/fundos\/[^'"\)]+)['"]?\)/g, 
-                    (match, path) => `url('${MASTER_URL}${path}')`
-                );
+                content = fixBackgroundUrls(content);
 
                 slideContent.innerHTML = content;
                 slideContent.classList.add('in');
@@ -582,363 +581,13 @@
             }, 1000);
         }
 
-        function handleConnectionStatus(data) {
-            if (data.registered) {
-                showPresentationSection();
-                startPresentation();
-            } else {
-                showRegistrationSection(data);
-            }
-        }
+        // Remove handleConnectionStatus since we're using SSE now
+        // Remove handleRegistrationUpdate since we're using SSE now
 
-        function handleRegistrationUpdate(data) {
-            if (data.registered) {
-                showPresentationSection();
-                startPresentation();
-                showSuccessMessage('Conexão estabelecida com sucesso!');
-            } else if (data.action === 'name_update') {
-                // Manter na seção de apresentação ao atualizar o nome
-                showPresentationSection();
-                startPresentation();
-            } else {
-                showRegistrationSection(data);
-            }
-        }
+        // Start the application when DOM is ready
+        document.addEventListener('DOMContentLoaded', initialize);
 
-        function showSuccessMessage(message) {
-            const statusElement = document.getElementById('connectionStatus');
-            statusElement.textContent = message;
-            statusElement.classList.add('connected');
-            statusElement.classList.remove('disconnected');
-            statusElement.classList.remove('hidden');
-
-            // Esconder a mensagem após 5 segundos
-            clearTimeout(statusTimeout);
-            statusTimeout = setTimeout(() => {
-                statusElement.classList.add('hidden');
-            }, 5000);
-        }
-
-        // Inicializar a aplicação com verificação de estado
-        async function initialize() {
-            try {
-                const statusResponse = await fetch('/connection-status');
-                const statusData = await statusResponse.json();
-
-                if (statusData.registered) {
-                    showPresentationSection();
-                    startPresentation();
-                } else {
-                    const screenDataResponse = await fetch('/screen-data');
-                    const screenData = await screenDataResponse.json();
-                    showRegistrationSection(screenData);
-                }
-
-                // Iniciar WebSocket connection depois de verificar o estado
-                initWebSocket();
-            } catch (error) {
-                console.error('Initialization error:', error);
-                showConnectionError();
-            }
-        }
-
-        function showRegistrationSection(data) {
-            document.getElementById('registrationSection').classList.remove('hidden');
-            document.getElementById('presentationSection').classList.remove('visible');
-            document.getElementById('qrcode').src = `http://localhost:4000/generate-qr?screenId=${data.screenId}`;
-            document.getElementById('pin').textContent = data.pin;
-            document.getElementById('screenId').textContent = data.screenId;
-        }
-
-        function showPresentationSection() {
-            document.getElementById('registrationSection').classList.add('hidden');
-            document.getElementById('presentationSection').classList.add('visible');
-        }
-
-        async function checkConnectionStatus() {
-            try {
-                const response = await fetch('/connection-status');
-                const data = await response.json();
-                updateConnectionStatus(data);
-
-                // Se não estiver registrado, limpa o conteúdo e volta para tela de registro
-                if (!data.registered) {
-                    currentContent = null;
-                    document.getElementById('slideContent').innerHTML = '';
-                    document.getElementById('registrationSection').classList.remove('hidden');
-                    document.getElementById('presentationSection').classList.remove('visible');
-                    const screenDataResponse = await fetch('/screen-data');
-                    const screenData = await screenDataResponse.json();
-                    document.getElementById('qrcode').src = `http://localhost:4000/generate-qr?screenId=${screenData.screenId}`;
-                    document.getElementById('pin').textContent = screenData.pin;
-                    document.getElementById('screenId').textContent = screenData.screenId;
-                }
-            } catch (error) {
-                console.error('Erro ao verificar status:', error);
-                showConnectionError();
-            }
-        }
-
-        function updateConnectionStatus(data) {
-            const statusElement = document.getElementById('connectionStatus');
-            
-            if (data.registered) {
-                statusElement.textContent = `Conectado ao Master (${data.masterUrl})`;
-                statusElement.classList.add('connected');
-                statusElement.classList.remove('disconnected');
-                
-                // Esconder o status após 5 segundos
-                clearTimeout(statusTimeout);
-                statusTimeout = setTimeout(() => {
-                    statusElement.classList.add('hidden');
-                }, 5000);
-            } else {
-                statusElement.textContent = 'Aguardando conexão com o Master...';
-                statusElement.classList.remove('connected', 'hidden');
-                statusElement.classList.add('disconnected');
-            }
-        }
-
-        function showConnectionError() {
-            const statusElement = document.getElementById('connectionStatus');
-            statusElement.textContent = 'Erro ao verificar conexão';
-            statusElement.classList.add('disconnected');
-        }
-
-        // Função para carregar e exibir conteúdo
-        async function loadContent() {
-            try {
-                const response = await fetch('/content');
-                const data = await response.json();
-                
-                if (data.content) {
-                    const contentArray = Array.isArray(data.content) ? data.content : [data.content];
-                    
-                    // Verificar se o conteúdo é diferente antes de atualizar
-                    if (JSON.stringify(currentContent) !== JSON.stringify(contentArray)) {
-                        console.log('Novo conteúdo recebido:', contentArray);
-                        currentContent = contentArray;
-                        currentIndex = 0;
-                        
-                        // Garantir que os elementos existam antes de chamar showSlide
-                        if (document.getElementById('slideContent') && 
-                            document.getElementById('slideContainer')) {
-                            showSlide();
-                        } else {
-                            console.error('Elementos necessários não encontrados');
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('Erro ao carregar conteúdo:', error);
-            }
-        }
-
-        // Add slide transition lock to prevent multiple transitions
-        let isTransitioning = false;
-        let slideTimeout = null;
-
-        // Add this function to fix background image paths
-        function fixBackgroundUrls(content) {
-            return content.replace(
-                /url\(['"]?(\/fundos\/[^'"\)]+)['"]?\)/g, 
-                (match, path) => `url('${MASTER_URL}${path}')`
-            );
-        }
-
-        // Update showSlide function to handle backgrounds
-        async function showSlide() {
-            if (!currentContent || currentContent.length === 0) {
-                showWaitingScreen();
-                return;
-            }
-
-            const slideContent = document.getElementById('slideContent');
-            if (!slideContent) return;
-
-            // Remove previous content with fade
-            slideContent.classList.remove('in');
-            
-            setTimeout(() => {
-                // Clear previous content
-                slideContent.innerHTML = '';
-
-                // Get and fix current content
-                let content = currentContent[currentIndex];
-                content = fixBackgroundUrls(content);
-
-                // Add new content
-                slideContent.innerHTML = content;
-                
-                // Handle special content
-                handleSpecialContent(slideContent);
-
-                // Fade in new content
-                slideContent.classList.add('in');
-
-                // Schedule next slide
-                if (currentContent.length > 1) {
-                    setTimeout(() => {
-                        currentIndex = (currentIndex + 1) % currentContent.length;
-                        showSlide();
-                    }, 10000);
-                }
-            }, 1000);
-        }
-
-        function handleVideoContent(container) {
-            const videoElement = container.querySelector('video');
-            if (videoElement) {
-                videoElement.muted = true;
-                videoElement.playsInline = true;
-                videoElement.load();
-                
-                const playPromise = videoElement.play();
-                if (playPromise !== undefined) {
-                    playPromise.then(() => {
-                        console.log('Video playing successfully');
-                    }).catch(error => {
-                        console.error('Error playing video:', error);
-                        nextSlide();
-                    });
-                }
-
-                videoElement.addEventListener('ended', nextSlide, { once: true });
-
-                // Fallback timer
-                clearTimeout(slideTimeout); // Clear any existing timeout
-                slideTimeout = setTimeout(() => {
-                    if (videoElement.paused && videoElement.currentTime === 0) {
-                        nextSlide();
-                    }
-                }, 5000);
-            }
-        }
-
-        // Update handleListContent for smoother animations
-        function handleListContent(container) {
-            if (window.listInterval) {
-                clearInterval(window.listInterval);
-            }
-
-            const listItems = Array.from(container.querySelectorAll('.product-list-item'));
-            let currentListIndex = 0;
-
-            function rotateListItem() {
-                listItems.forEach(item => {
-                    item.classList.remove('active');
-                    item.style.animation = '';
-                });
-                
-                const currentItem = listItems[currentListIndex];
-                currentItem.classList.add('active');
-                currentItem.style.animation = 'slideIn 0.3s ease-out';
-                
-                let imageUrl = currentItem.dataset.imageUrl;
-                if (imageUrl && !imageUrl.startsWith('http')) {
-                    imageUrl = `http://localhost:4000${imageUrl}`;
-                }
-                
-                const featuredImage = container.querySelector('.featured-image');
-                const featuredName = container.querySelector('.featured-name');
-                const featuredPrice = container.querySelector('.featured-price');
-
-                featuredImage.src = imageUrl;
-                featuredImage.onerror = () => {
-                    featuredImage.src = 'http://localhost:4000/uploads/default-product.png';
-                };
-                
-                featuredName.textContent = currentItem.dataset.name;
-                
-                let price = currentItem.dataset.price;
-                try {
-                    price = price.replace('R$', '').trim();
-                    price = parseFloat(price);
-                    featuredPrice.textContent = isNaN(price) ? 'Preço indisponível' : `R$ ${price.toFixed(2)}`;
-                } catch (error) {
-                    console.error('Error parsing price:', error);
-                    featuredPrice.textContent = 'Preço indisponível';
-                }
-
-                currentItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                currentListIndex = (currentListIndex + 1) % listItems.length;
-
-                if (currentListIndex === 0) {
-                    clearTimeout(slideTimeout); // Clear any existing timeout
-                    slideTimeout = setTimeout(() => {
-                        nextSlide();
-                    }, 5000); // Ensure the last item stays for the full duration
-                } else {
-                    slideTimeout = setTimeout(rotateListItem, 5000); // Extended display time for list items
-                }
-            }
-
-            rotateListItem();
-        }
-
-        function nextSlide() {
-            clearTimeout(slideTimeout);
-            currentIndex = (currentIndex + 1) % currentContent.length;
-            isTransitioning = false;
-            showSlide();
-        }
-
-        // Modificar a função startPresentation para remover o setInterval adicional
-        function startPresentation() {
-            checkConnectionStatus();
-            loadContent();
-            
-            // Apenas verificar status e conteúdo periodicamente
-            setInterval(checkConnectionStatus, 5000);
-            setInterval(loadContent, 5000);
-            //a
-            // Remover o setInterval do showSlide pois agora é controlado internamente
-        }
-
-        // Inicializar a aplicação
-        initialize();
-
-        // Verificar atualizações de conteúdo periodicamente
-        setInterval(async () => {
-            try {
-                const response = await fetch('/content');
-                const data = await response.json();
-                
-                if (data.content) {
-                    const contentArray = Array.isArray(data.content) ? data.content : [data.content];
-                    if (JSON.stringify(currentContent) !== JSON.stringify(contentArray)) {
-                        currentContent = contentArray;
-                        currentIndex = 0;
-                        showSlide();
-                    }
-                }
-            } catch (error) {
-                console.error('Erro ao verificar atualizações de conteúdo:', error);
-            }
-        }, 10000); // Verificar a cada 10 segundos
-
-        document.addEventListener('DOMContentLoaded', () => {
-            setInterval(async () => {
-                try {
-                    const response = await fetch('/connection-status');
-                    const data = await response.json();
-                    const isRegistered = data.registered;
-                    document.getElementById('displayArea').style.display = isRegistered ? 'block' : 'none';
-                    // ...hide or show the registration form accordingly...
-                } catch (error) {
-                    console.error('Error checking registration status:', error);
-                }
-            }, 5000);
-        });
-
-        function handleNewContent(content) {
-            console.log('Novo conteúdo recebido:', content);
-            if (content) {
-                document.getElementById('registrationForm').style.display = 'none';
-                document.getElementById('displayArea').style.display = 'block';
-                // ...load slides or videos here...
-            }
-        }
+        // ...rest of existing code...
     </script>
 </body>
 </html>

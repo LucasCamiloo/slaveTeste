@@ -470,7 +470,7 @@ function handleListContent(container) {
     const listItems = Array.from(container.querySelectorAll('.product-list-item'));
     let currentListIndex = 0;
     const SECONDS_PER_ITEM = 10;
-    const totalDuration = listItems.length * SECONDS_PER_ITEM * 1000; // Total duration in milliseconds
+    const totalDuration = listItems.length * SECONDS_PER_ITEM * 1000;
     
     console.log(`Starting list rotation with ${listItems.length} items, total duration: ${totalDuration}ms`);
 
@@ -504,39 +504,44 @@ function handleListContent(container) {
             featuredPrice.textContent = currentItem.dataset.price || 'Preço indisponível';
         }
 
-        // Scroll into view
-        currentItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        // Scroll into view with offset to ensure visibility
+        const container = document.querySelector('.products-list');
+        if (container) {
+            const itemOffset = currentItem.offsetTop;
+            container.scrollTo({
+                top: itemOffset - container.clientHeight / 2 + currentItem.clientHeight / 2,
+                behavior: 'smooth'
+            });
+        }
         
         console.log(`Updated to item ${currentListIndex + 1} of ${listItems.length}`);
     }
 
-    function rotateList() {
-        // Update current item
-        updateFeaturedProduct(listItems[currentListIndex]);
+    // Use setInterval instead of recursive setTimeout
+    let completedRotations = 0;
+    const startTime = Date.now();
+    
+    window.listInterval = setInterval(() => {
+        const elapsedTime = Date.now() - startTime;
         
-        // Schedule next item
-        window.listTimeout = setTimeout(() => {
-            currentListIndex++;
-            
-            // If we've shown all items, reset to first item
-            if (currentListIndex >= listItems.length) {
-                currentListIndex = 0;
-            }
-            
-            rotateList(); // Continue rotation
-        }, SECONDS_PER_ITEM * 1000);
-    }
+        if (elapsedTime >= totalDuration) {
+            clearInterval(window.listInterval);
+            currentIndex = (currentIndex + 1) % currentContent.length;
+            showSlide();
+            return;
+        }
 
-    // Start the rotation
-    rotateList();
+        updateFeaturedProduct(listItems[currentListIndex]);
+        currentListIndex = (currentListIndex + 1) % listItems.length;
+        
+        if (currentListIndex === 0) {
+            completedRotations++;
+            console.log(`Completed rotation ${completedRotations}`);
+        }
+    }, SECONDS_PER_ITEM * 1000);
 
-    // Schedule next slide only after showing all items
-    window.slideTimeout = setTimeout(() => {
-        console.log('List rotation complete, moving to next slide');
-        if (window.listTimeout) clearTimeout(window.listTimeout);
-        currentIndex = (currentIndex + 1) % currentContent.length;
-        showSlide();
-    }, totalDuration);
+    // Show first item immediately
+    updateFeaturedProduct(listItems[0]);
 }
 
 // Update showSlide to better handle list content

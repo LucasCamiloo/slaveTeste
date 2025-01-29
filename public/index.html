@@ -445,149 +445,57 @@
     </div>
 
     <script>
-        // Remove all WebSocket related code and variables
-        let currentContent = null;
-        let currentIndex = 0;
-        let statusTimeout;
-        let eventSource = null;
-        let reconnectAttempts = 0;
-        const MAX_RECONNECT_ATTEMPTS = 5;
-        const RECONNECT_DELAY = 3000;
-
-        // Update initialize function to use SSE
-        async function initialize() {
-            try {
-                const statusResponse = await fetch('/connection-status');
-                const statusData = await statusResponse.json();
-
-                if (statusData.registered) {
-                    showPresentationSection();
-                    await loadContent(); // Load initial content
-                    startPresentation();
-                } else {
-                    const screenDataResponse = await fetch('/screen-data');
-                    const screenData = await screenDataResponse.json();
-                    showRegistrationSection(screenData);
-                }
-
-                // Initialize SSE instead of WebSocket
-                initSSE();
-            } catch (error) {
-                console.error('Initialization error:', error);
-                showConnectionError();
+        // Add missing utility functions
+        function showWaitingScreen() {
+            const slideContent = document.getElementById('slideContent');
+            if (slideContent) {
+                slideContent.innerHTML = `
+                    <div style="color: white; text-align: center; padding: 20px;">
+                        <h2>Aguardando conteúdo...</h2>
+                        <p>A tela está conectada e pronta para exibir conteúdo.</p>
+                    </div>
+                `;
             }
         }
 
-        // Update SSE initialization
-        function initSSE() {
-            if (eventSource) {
-                eventSource.close();
-            }
+        function showRegistrationSection(data) {
+            console.log('Showing registration section:', data);
+            const registrationSection = document.getElementById('registrationSection');
+            const presentationSection = document.getElementById('presentationSection');
+            const pinSpan = document.getElementById('pin');
+            const screenIdSpan = document.getElementById('screenId');
 
-            console.log('🔄 Initializing SSE connection...');
-            eventSource = new EventSource(`${MASTER_URL}/events`);
-
-            eventSource.onopen = () => {
-                console.log('✅ SSE connected');
-                reconnectAttempts = 0;
-                checkConnectionStatus();
-            };
-
-            eventSource.onmessage = async (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('📨 SSE message received:', data);
-
-                    if (data.type === 'screen_update') {
-                        if (data.content) {
-                            console.log('Updating content:', data.content);
-                            currentContent = Array.isArray(data.content) ? data.content : [data.content];
-                            currentIndex = 0;
-                            showSlide();
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error processing SSE message:', error);
-                }
-            };
-
-            eventSource.onerror = (error) => {
-                console.error('SSE error:', error);
-                eventSource.close();
-                
-                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                    reconnectAttempts++;
-                    const delay = RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
-                    console.log(`🔄 Reconnecting in ${delay}ms (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
-                    setTimeout(initSSE, delay);
-                } else {
-                    console.error('Max reconnection attempts reached');
-                    showConnectionError();
-                }
-            };
-        }
-
-        // Update loadContent function
-        async function loadContent() {
-            try {
-                const response = await fetch('/content');
-                const data = await response.json();
-                
-                if (data.content) {
-                    currentContent = Array.isArray(data.content) ? data.content : [data.content];
-                    currentIndex = 0;
-                    showSlide();
-                }
-            } catch (error) {
-                console.error('Error loading content:', error);
-            }
-        }
-
-        // Update showSlide to handle background URLs
-        function showSlide() {
-            if (!currentContent || currentContent.length === 0) {
-                showWaitingScreen();
+            if (!data || !data.pin || !data.screenId) {
+                console.error('Invalid registration data:', data);
                 return;
             }
 
-            const slideContent = document.getElementById('slideContent');
-            if (!slideContent) return;
-
-            console.log('Showing slide:', currentContent[currentIndex]);
-
-            // Remove previous content with fade
-            slideContent.classList.remove('in');
-            
-            setTimeout(() => {
-                // Update content with background fix
-                let content = currentContent[currentIndex];
-                content = fixBackgroundUrls(content);
-
-                slideContent.innerHTML = content;
-                slideContent.classList.add('in');
-
-                // Handle special content types
-                if (content.includes('video-container')) {
-                    handleVideoContent(slideContent);
-                } else if (content.includes('product-list-item')) {
-                    handleListContent(slideContent);
-                } else {
-                    // Schedule next slide for regular content
-                    setTimeout(() => {
-                        currentIndex = (currentIndex + 1) % currentContent.length;
-                        showSlide();
-                    }, 10000);
-                }
-            }, 1000);
+            registrationSection.classList.remove('hidden');
+            presentationSection.classList.remove('visible');
+            pinSpan.textContent = data.pin;
+            screenIdSpan.textContent = data.screenId;
         }
 
-        // Remove handleConnectionStatus since we're using SSE now
-        // Remove handleRegistrationUpdate since we're using SSE now
+        function showPresentationSection() {
+            document.getElementById('registrationSection').classList.add('hidden');
+            document.getElementById('presentationSection').classList.add('visible');
+        }
 
-        // Start the application when DOM is ready
-        document.addEventListener('DOMContentLoaded', initialize);
+        function showConnectionError() {
+            const statusElement = document.getElementById('connectionStatus');
+            statusElement.textContent = 'Erro de conexão - Tentando reconectar...';
+            statusElement.classList.add('disconnected');
+            statusElement.classList.remove('connected', 'hidden');
 
-        // ...rest of existing code...
+            getScreenData().then(data => {
+                if (data) showRegistrationSection(data);
+            }).catch(console.error);
+        }
+
+        // Remove the initialize function from here - it will be used from script.js
     </script>
+
+    <!-- Import script.js after our utility functions -->
+    <script src="/script.js"></script>
 </body>
 </html>

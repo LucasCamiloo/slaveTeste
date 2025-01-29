@@ -517,6 +517,51 @@ async function startServer() {
             }
         });
 
+        // Update content endpoint to properly handle array content
+        app.get('/content', async (req, res) => {
+            try {
+                const data = await ScreenManager.getData();
+                console.log('Content request - Raw data:', {
+                    content: data.content,
+                    type: typeof data.content,
+                    isArray: Array.isArray(data.content)
+                });
+
+                // Ensure we have a valid response structure
+                const response = {
+                    success: true,
+                    content: null,
+                    lastUpdate: data.lastUpdate || new Date()
+                };
+
+                // Handle content based on its type
+                if (data.content) {
+                    // If content is already an array, use it directly
+                    if (Array.isArray(data.content)) {
+                        response.content = data.content;
+                    } 
+                    // If content is a string, wrap it in an array
+                    else if (typeof data.content === 'string') {
+                        response.content = [data.content];
+                    }
+                    // If content is an object with mixed type, convert to array
+                    else if (typeof data.content === 'object') {
+                        response.content = Array.isArray(data.content) ? data.content : [data.content];
+                    }
+                }
+
+                console.log('Sending formatted content:', response);
+                res.json(response);
+            } catch (error) {
+                console.error('Content fetch error:', error);
+                res.status(500).json({ 
+                    success: false, 
+                    message: error.message,
+                    content: null 
+                });
+            }
+        });
+
         app.get('/api/products', async (req, res) => {
             try {
                 const products = await Product.find({});

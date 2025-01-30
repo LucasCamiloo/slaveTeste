@@ -941,3 +941,106 @@ app.get('/screen-data', async (req, res) => {
         });
     }
 });
+
+// Update screen data endpoint to be more consistent
+app.get('/screen-data', async (req, res) => {
+    try {
+        const deviceId = req.headers['x-device-id'];
+        console.log('📱 Screen data request received:', { deviceId });
+
+        let screenData = await ScreenData.findOne({ deviceId });
+
+        // Generate new credentials if none exist
+        if (!screenData) {
+            const newScreenData = {
+                deviceId,
+                screenId: generateRandomString(8),
+                pin: generateRandomString(4).toUpperCase(),
+                registered: false,
+                content: null,
+                lastUpdate: new Date()
+            };
+            
+            screenData = await ScreenData.create(newScreenData);
+            console.log('✨ Created new screen data:', newScreenData);
+        }
+
+        // Send only necessary data
+        const response = {
+            screenId: screenData.screenId,
+            pin: screenData.pin,
+            registered: screenData.registered,
+            lastUpdate: screenData.lastUpdate
+        };
+
+        console.log('📤 Sending screen data response:', response);
+        res.json(response);
+
+    } catch (error) {
+        console.error('❌ Error in /screen-data:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// Update registration endpoint to be more forgiving
+app.post('/register', async (req, res) => {
+    try {
+        const { pin, screenId, masterUrl } = req.body;
+        console.log('📝 Registration attempt:', { pin, screenId, masterUrl });
+
+        if (!pin || !screenId || !masterUrl) {
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required fields'
+            });
+        }
+
+        // Find screen by screenId
+        let screenData = await ScreenData.findOne({ screenId });
+
+        // If not found, try to find by deviceId
+        if (!screenData) {
+            screenData = await ScreenData.findOne({ deviceId: screenId });
+        }
+
+        if (!screenData) {
+            console.log('❌ Screen not found, creating new one');
+            screenData = await ScreenData.create({
+                deviceId: screenId,
+                screenId: screenId,
+                pin: pin,
+                registered: false,
+                content: null,
+                lastUpdate: new Date()
+            });
+        }
+
+        // Update registration
+        screenData.registered = true;
+        screenData.masterUrl = masterUrl;
+        screenData.lastUpdate = new Date();
+        await screenData.save();
+
+        console.log('✅ Registration successful:', {
+            screenId: screenData.screenId,
+            registered: true
+        });
+
+        res.json({
+            success: true,
+            message: 'Registration successful',
+            screenId: screenData.screenId,
+            registered: true
+        });
+
+    } catch (error) {
+        console.error('❌ Registration error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});

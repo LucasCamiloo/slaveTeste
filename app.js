@@ -1268,7 +1268,7 @@ app.post('/register', async (req, res) => {
 
 // ...existing code...
 
-// Update screen data endpoint to maintain consistent credentials
+// Update screen data endpoint for consistent response
 app.get('/screen-data', async (req, res) => {
     try {
         const deviceId = req.headers['x-device-id'];
@@ -1281,41 +1281,50 @@ app.get('/screen-data', async (req, res) => {
             });
         }
 
-        // Try to find existing screen data by deviceId
-        let screenData = await ScreenData.findOne({ deviceId });
+        // Find or create screen data with timeout
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Database timeout')), 5000)
+        );
 
-        if (!screenData) {
-            // Only generate new credentials if none exist for this device
-            const newScreenData = {
-                deviceId,
-                screenId: deviceId, // Use deviceId as screenId for consistency
-                pin: generateRandomString(4).toUpperCase(),
-                registered: false,
-                content: null,
-                lastUpdate: new Date()
-            };
-            
-            screenData = await ScreenData.create(newScreenData);
-            console.log('✨ Created new screen data:', newScreenData);
-        }
+        const dbOperation = async () => {
+            let screenData = await ScreenData.findOne({ deviceId });
 
-        // Return consistent response
+            if (!screenData) {
+                screenData = await ScreenData.create({
+                    deviceId,
+                    screenId: generateRandomString(8),
+                    pin: generateRandomString(4).toUpperCase(),
+                    registered: false,
+                    content: null,
+                    lastUpdate: new Date()
+                });
+            }
+
+            return screenData;
+        };
+
+        const screenData = await Promise.race([dbOperation(), timeoutPromise]);
+
+        // Ensure consistent JSON response
         const response = {
+            success: true,
             screenId: screenData.screenId,
             pin: screenData.pin,
             registered: screenData.registered,
             lastUpdate: screenData.lastUpdate
         };
 
-        console.log('📤 Sending screen data response:', response);
-        res.json(response);
+        // Set proper headers
+        res.setHeader('Content-Type', 'application/json');
+        res.status(200).json(response);
 
     } catch (error) {
         console.error('❌ Error in /screen-data:', error);
-        res.status(500).json({
-            success: false,
-            message: error.message
-        });
+        res.status(error.message === 'Database timeout' ? 504 : 500)
+           .json({
+                success: false,
+                message: error.message
+           });
     }
 });
 

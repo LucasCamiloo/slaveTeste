@@ -1,31 +1,326 @@
 const MASTER_URL = 'https://master-teste.vercel.app';
 const SLAVE_URL = 'https://slave-teste.vercel.app';
 
-let currentContent = null;
-let currentIndex = 0;
-let statusTimeout;
+let devices = [];
 let eventSource = null;
-let reconnectAttempts = 0;
-const MAX_RECONNECT_ATTEMPTS = 5;
-const RECONNECT_DELAY = 3000;
 
-let cachedScreenData = null;
+async function loadDevices() {
+    try {
+        const response = await fetch(`${MASTER_URL}/screens`);
+        const data = await response.json();
+        devices = data.screens;
+        updateDeviceList();
+        // Only update chart if we're on the main page
+        const chartElement = document.getElementById('statusChart');
+        if (chartElement) {
+            updateChart();
+        }
+    } catch (error) {
+        console.error('Error loading devices:', error);
+    }
+}
 
-// Update cache management
-const appState = {
-    deviceId: null,
-    screenData: null,
-    lastFetch: 0,
-    cacheTTL: 30000, // 30 seconds
-    initialized: false
-};
+// Remove WebSocket initialization and add SSE
+function initSSE() {
+    if (eventSource) {
+        eventSource.close();
+    }
 
-// Função para gerar ID de dispositivo único
+    eventSource = new EventSource(`${MASTER_URL}/events`);
+
+    eventSource.onopen = () => {
+        console.log('SSE connection established');
+    };
+
+    eventSource.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            console.log('SSE message received:', data);
+
+            if (data.type === 'screen_update') {
+                if (data.action === 'name_update') {
+                    // Atualizar apenas o nome localmente
+                    const device = devices.find(d => d.id === data.screenId);
+                    if (device) {
+                        device.name = data.name;
+                        updateDeviceList();
+                    }
+                } else {
+                    // Manter comportamento atual
+                    loadDevices();
+                }
+            }
+        } catch (error) {
+            console.error('Error processing SSE message:', error);
+        }
+    };
+
+    eventSource.onerror = (error) => {
+        console.error('SSE error:', error);
+        eventSource.close();
+        setTimeout(initSSE, 5000); // Reconectar após 5 segundos
+    };
+}
+
+// Adicionar função createDeviceElement
+function createDeviceElement(device) {
+    const deviceDiv = document.createElement('div');
+    deviceDiv.className = 'card mb-3';
+    deviceDiv.innerHTML = `
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h5 class="card-title">${device.name || 'Sem nome'}</h5>
+                    <span class="badge ${device.operational ? 'bg-success' : 'bg-danger'}">
+                        ${device.operational ? 'Operante' : 'Inoperante'}
+                    </span>
+                </div>
+                <div class="actions">
+                    <button class="action-btn view-btn" onclick="viewDevice('${device.id}')" title="Visualizar">
+                        <i class="bi bi-eye"></i>
+                    </button>
+                    <button class="action-btn edit-btn" onclick="editDevice('${device.id}')" title="Editar">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="action-btn ad-btn" onclick="selectAd('${device.id}')" title="Anúncios">
+                        <i class="bi bi-image"></i>
+                    </button>
+                    <button class="action-btn delete-btn" onclick="deleteDevice('${device.id}')" title="Excluir">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    return deviceDiv;
+}
+
+// Atualizar o evento DOMContentLoaded
+document.addEventListener('DOMContentLoaded', () => {
+    loadDevices();
+    initSSE();
+    // Recarregar a lista a cada 5 segundos
+    setInterval(loadDevices, 5000);
+});
+
+function updateDeviceList() {
+    const container = document.getElementById('deviceListContainer');
+    if (!container) return;
+
+    container.innerHTML = devices.map(device => `
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h5 class="card-title">${device.name || 'Sem nome'}</h5>
+                        <span class="badge ${device.operational ? 'bg-success' : 'bg-danger'}">
+                            ${device.operational ? 'Operante' : 'Inoperante'}
+                        </span>
+                    </div>
+                    <div class="actions">
+                        <button class="action-btn view-btn" onclick="viewDevice('${device.id}')" title="Visualizar">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                        <button class="action-btn edit-btn" onclick="editDevice('${device.id}')" title="Editar">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="action-btn ad-btn" onclick="selectAd('${device.id}')" title="Anúncios">
+                            <i class="bi bi-image"></i>
+                        </button>
+                        <button class="action-btn delete-btn" onclick="deleteDevice('${device.id}')" title="Excluir">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+function updateChart() {
+    const chartElement = document.getElementById('statusChart');
+    if (!chartElement) {
+        return; // Skip chart update if element doesn't exist
+    }
+
+    const operanteCount = devices.filter(d => d.registered).length;
+    const inoperanteCount = devices.filter(d => !d.registered).length;
+
+    const ctx = chartElement.getContext('2d');
+    if (window.statusChart) {
+        window.statusChart.destroy();
+    }
+    
+    window.statusChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Operantes', 'Inoperantes'],
+            datasets: [{
+                data: [operanteCount, inoperanteCount],
+                backgroundColor: ['#28a745', '#dc3545'],
+                borderColor: ['#28a745', '#dc3545'],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'top'
+                }
+            }
+        }
+    });
+}
+
+function editDevice(deviceId) {
+    try {
+        console.log('Editing device:', deviceId);
+        const device = devices.find(d => d.id === deviceId);
+        if (!device) {
+            console.error('Device not found:', deviceId);
+            return;
+        }
+        console.log('Found device:', device);
+
+        const modalElement = document.getElementById('editDeviceModal');
+        if (!modalElement) {
+            console.error('Modal element not found');
+            return;
+        }
+
+        // Set modal values
+        document.getElementById('editDeviceId').value = deviceId;
+        document.getElementById('deviceName').value = device.name || '';
+        console.log('Modal values set');
+
+        // Initialize and show modal
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+
+        // Log modal state
+        console.log('Modal shown');
+    } catch (error) {
+        console.error('Error in editDevice:', error);
+    }
+}
+
+async function saveDeviceName() {
+    try {
+        const deviceId = document.getElementById('editDeviceId').value;
+        const newName = document.getElementById('deviceName').value.trim();
+        
+        console.log('Saving device name:', { deviceId, newName });
+
+        if (!deviceId || !newName) {
+            Swal.fire('Erro', 'Por favor, insira um nome válido', 'error');
+            return;
+        }
+
+        const response = await fetch(`${MASTER_URL}/api/screens/${deviceId}/name`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ name: newName })
+        });
+
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            // Atualizar o dispositivo na lista local
+            const device = devices.find(d => d.id === deviceId);
+            if (device) {
+                device.name = newName;
+            }
+            
+            // Atualizar a interface
+            updateDeviceList();
+
+            // Fechar o modal
+            const modalElement = document.getElementById('editDeviceModal');
+            const modal = bootstrap.Modal.getInstance(modalElement);
+            modal.hide();
+
+            await Swal.fire('Sucesso!', 'Nome do dispositivo atualizado', 'success');
+            loadDevices(); // Atualiza a lista para persistir o nome
+        } else {
+            throw new Error(data.message || 'Erro ao atualizar nome');
+        }
+    } catch (error) {
+        console.error('Error in saveDeviceName:', error);
+        Swal.fire('Erro', 'Falha ao salvar nome: ' + error.message, 'error');
+    }
+}
+
+// ...existing code...
+
+// Update the selectAd function with better error handling
+async function selectAd(deviceId) {
+    try {
+        console.log('Loading available ads...');
+        const response = await fetch(`${MASTER_URL}/api/ads/available`);
+        if (!response.ok) {
+            throw new Error(`Failed to load ads: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        if (!data.ads || !data.ads.length) {
+            throw new Error('No ads available');
+        }
+
+        const adSelector = document.createElement('select');
+        adSelector.innerHTML = data.ads.map(ad => 
+            `<option value="${ad.id}">${ad.title} (${new Date(ad.dateCreated).toLocaleDateString()})</option>`
+        ).join('');
+
+        const result = await Swal.fire({
+            title: 'Selecione um anúncio',
+            html: adSelector,
+            showCancelButton: true,
+            confirmButtonText: 'Selecionar',
+            cancelButtonText: 'Cancelar'
+        });
+
+        if (result.isConfirmed) {
+            const selectedAdId = adSelector.value;
+            console.log('Updating ad:', { deviceId, selectedAdId });
+
+            const updateResponse = await fetch(`${MASTER_URL}/api/screens/${deviceId}/ad`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ adId: selectedAdId })
+            });
+
+            if (!updateResponse.ok) {
+                const errorData = await updateResponse.json();
+                throw new Error(errorData.message || 'Failed to update ad');
+            }
+
+            const updateData = await updateResponse.json();
+            if (updateData.success) {
+                await loadDevices();
+                await Swal.fire('Sucesso!', 'Anúncio atualizado com sucesso', 'success');
+            } else {
+                throw new Error(updateData.message || 'Failed to update ad');
+            }
+        }
+    } catch (error) {
+        console.error('Error selecting ad:', error);
+        await Swal.fire('Erro', `Falha ao selecionar anúncio: ${error.message}`, 'error');
+    }
+}
+
+// ...existing code...
+
+// Add device ID generation function
 function generateDeviceId() {
     const storedId = localStorage.getItem('deviceId');
     if (storedId) return storedId;
     
-    // Generate a more unique ID using timestamp, random string and browser info
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(2, 15);
     const browserInfo = navigator.userAgent.replace(/[^a-zA-Z0-9]/g, '').substring(0, 10);
@@ -35,637 +330,339 @@ function generateDeviceId() {
     return newId;
 }
 
-// Funções de apresentação
-function startPresentation() {
-    console.log('🎬 Iniciando apresentação');
-    if (currentContent) {
-        showSlide();
-    } else {
-        console.log('ℹ️ Nenhum conteúdo para apresentar');
-        showWaitingScreen();
-    }
-}
-
-function showWaitingScreen() {
-    const slideContent = document.getElementById('slideContent');
-    if (slideContent) {
-        slideContent.innerHTML = `
-            <div style="color: white; text-align: center; padding: 20px;">
-                <h2>Aguardando conteúdo...</h2>
-                <p>A tela está conectada e pronta para exibir conteúdo.</p>
-            </div>
-        `;
-    }
-}
-
-// Update showSlide function to better handle content display
-function showSlide() {
-    if (!currentContent || !Array.isArray(currentContent) || currentContent.length === 0) {
-        showWaitingScreen();
-        return;
-    }
-
-    const slideContent = document.getElementById('slideContent');
-    if (!slideContent) return;
-
-    console.log('Showing slide:', currentIndex, 'Total slides:', currentContent.length);
-
-    // Clear any existing timeout
-    if (window.slideTimeout) {
-        clearTimeout(window.slideTimeout);
-    }
-
-    // Remove previous content with fade
-    slideContent.classList.remove('in');
-    
-    setTimeout(() => {
-        try {
-            // Get current content from array
-            let content = currentContent[currentIndex];
-            
-            // Fix localhost and relative URLs for background images and other assets
-            content = content.replace(
-                /background(?:-image)?\s*:\s*url\(['"]?(?:http:\/\/localhost:\d+)?(\/[^'"\)]+)['"]?\)/g,
-                (match, path) => `background: url('${MASTER_URL}${path}')`
-            );
-
-            console.log('Content after URL fix:', content.substring(0, 200));
-
-            // Update content
-            slideContent.innerHTML = content;
-            
-            // Force reflow
-            void slideContent.offsetWidth;
-            
-            // Add fade in
-            slideContent.classList.add('in');
-
-            // Schedule next slide with clear timeout protection
-            window.slideTimeout = setTimeout(() => {
-                currentIndex = (currentIndex + 1) % currentContent.length;
-                showSlide();
-            }, 10000);
-
-        } catch (error) {
-            console.error('Error displaying slide:', error);
-            console.error('Content:', currentContent[currentIndex]);
-            showWaitingScreen();
-        }
-    }, 1000);
-}
-
-function handleSpecialContent(container) {
-    // Lidar com conteúdo de lista, se presente
-    if (container.querySelector('.product-list-item')) {
-        handleListContent(container);
-    }
-
-    // Lidar com conteúdo de vídeo, se presente
-    const video = container.querySelector('video');
-    if (video) {
-        handleVideoContent(video);
-    }
-}
-
-function handleVideoContent(video) {
-    video.play().catch(error => {
-        console.error('Erro ao reproduzir vídeo:', error);
-    });
-
-    video.onended = () => {
-        currentIndex = (currentIndex + 1) % currentContent.length;
-        showSlide();
-    };
-}
-
-// Enhanced caching function
-async function cacheScreenData() {
+// Update the registration function to be globally accessible
+window.registerScreen = async function() {
     try {
-        // Ensure we have a device ID
-        if (!appState.deviceId) {
-            appState.deviceId = generateDeviceId();
-        }
-
-        // If we have fresh cached data, return it
-        if (appState.initialized && appState.screenData && 
-            (Date.now() - appState.lastFetch < appState.cacheTTL)) {
-            return appState.screenData;
-        }
-
-        // Try to get data from localStorage for this specific device
-        const storedData = localStorage.getItem(`screenData_${appState.deviceId}`);
-        if (storedData) {
-            const parsedData = JSON.parse(storedData);
-            if (parsedData.screenId && parsedData.pin) {
-                console.log('📦 Using stored data for device:', appState.deviceId, parsedData);
-                appState.screenData = parsedData;
-                appState.initialized = true;
-                return parsedData;
-            }
-        }
-
-        // If no stored data, request new credentials from server
-        const response = await fetch('/screen-data', {
-            method: 'GET',
-            headers: {
-                'X-Device-ID': appState.deviceId
-            }
-        });
-        
-        const data = await response.json();
-        
-        if (!data || !data.screenId) {
-            throw new Error('Invalid screen data received');
-        }
-
-        // Store the data specific to this device
-        localStorage.setItem(`screenData_${appState.deviceId}`, JSON.stringify(data));
-        appState.screenData = data;
-        appState.initialized = true;
-        appState.lastFetch = Date.now();
-        
-        console.log('🔄 Cache initialized for device:', appState.deviceId, data);
-        return data;
-    } catch (error) {
-        console.error('❌ Cache update failed:', error);
-        throw error;
-    }
-}
-
-// Função para obter dados da tela usando o cache
-async function getScreenData() {
-    if (appState.initialized && appState.screenData) {
-        return appState.screenData;
-    }
-    return await cacheScreenData();
-}
-
-// Função para mostrar a seção de registro
-function showRegistrationSection(data) {
-    console.log('Mostrando seção de registro com dados:', data);
-    
-    const registrationSection = document.getElementById('registrationSection');
-    const presentationSection = document.getElementById('presentationSection');
-    const pinSpan = document.getElementById('pin');
-    const screenIdSpan = document.getElementById('screenId');
-
-    // Garantir que temos dados válidos
-    if (!data || !data.pin || !data.screenId) {
-        console.error('Dados inválidos para registro:', data);
-        return;
-    }
-
-    // Atualizar a interface
-    registrationSection.classList.remove('hidden');
-    presentationSection.classList.remove('visible');
-    
-    pinSpan.textContent = data.pin;
-    screenIdSpan.textContent = data.screenId;
-}
-
-// Update showPresentationSection function
-function showPresentationSection() {
-    const registrationSection = document.getElementById('registrationSection');
-    const presentationSection = document.getElementById('presentationSection');
-
-    registrationSection.classList.add('hidden');
-    presentationSection.classList.remove('hidden');
-    presentationSection.classList.add('visible');
-
-    // Force reflow
-    void presentationSection.offsetWidth;
-    presentationSection.classList.add('in');
-}
-
-// Função para atualizar o status da conexão na interface
-function updateConnectionStatus(status) {
-    const statusElement = document.getElementById('connectionStatus');
-    if (statusElement) {
-        if (status.registered) {
-            statusElement.textContent = 'Conectado';
-            statusElement.classList.remove('disconnected');
-            statusElement.classList.add('connected');
-        } else {
-            statusElement.textContent = 'Desconectado';
-            statusElement.classList.remove('connected');
-            statusElement.classList.add('disconnected');
-        }
-    }
-}
-
-// Função para mostrar erro de conexão
-function showConnectionError() {
-    const statusElement = document.getElementById('connectionStatus');
-    if (statusElement) {
-        statusElement.textContent = 'Erro de conexão - Tentando reconectar...';
-        statusElement.classList.add('disconnected');
-        statusElement.classList.remove('connected', 'hidden');
-    }
-
-    // Mostrar seção de registro após erro
-    getScreenData().then(data => {
-        if (data) {
-            showRegistrationSection(data);
-        }
-    }).catch(error => {
-        console.error('Erro ao recuperar dados após erro de conexão:', error);
-    });
-
-    // Tentar reconectar após um atraso
-    setTimeout(() => {
-        console.log('🔄 Tentando reconectar...');
-        initialize();
-    }, 5000);
-}
-
-// Função de inicialização
-async function initialize() {
-    console.log('=== Initializing Frontend ===');
-    try {
-        const screenData = await getScreenData();
-        console.log('📱 Initial state:', screenData);
-
-        if (!screenData?.screenId) {
-            throw new Error('Invalid screen data');
-        }
-
-        if (screenData.registered) {
-            console.log('✅ Screen registered, starting presentation');
-            showPresentationSection();
-            await loadContent(); // Load initial content
-            startPresentation();
-        } else {
-            console.log('ℹ️ Screen not registered, showing registration');
-            showRegistrationSection(screenData);
-        }
-
-        initSSE();
-    } catch (error) {
-        console.error('❌ Initialization error:', error);
-        showConnectionError();
-    }
-}
-
-// Update checkConnectionStatus to also load content when connection is confirmed
-async function checkConnectionStatus() {
-    try {
-        const screenData = await getScreenData();
-        if (!screenData?.screenId) {
-            throw new Error('No valid screen data available');
-        }
-
-        const response = await fetch(`${MASTER_URL}/screens`);
-        const { screens } = await response.json();
-        
-        console.log('Comparing screen IDs:', {
-            local: screenData.screenId,
-            screens: screens.map(s => s.id)
-        });
-
-        const registeredScreen = screens.find(screen => screen.id === screenData.screenId);
-        
-        if (!registeredScreen) {
-            console.log('❌ Screen not found in master, resetting state');
-            localStorage.removeItem('screenData');
-            appState.screenData = null;
-            appState.initialized = false;
-            
-            const newData = await getScreenData();
-            showRegistrationSection(newData);
+        const slaveUrl = document.getElementById('slaveUrl').value.trim();
+        if (!slaveUrl) {
+            Swal.fire('Erro', 'URL do slave é obrigatória', 'error');
             return;
         }
 
-        if (registeredScreen.registered) {
-            console.log('✅ Screen verified in master:', registeredScreen);
-            showPresentationSection();
-            updateConnectionStatus({
-                registered: true,
-                masterUrl: MASTER_URL
-            });
+        console.log('🔄 Iniciando registro com slave:', slaveUrl);
+        const deviceId = generateDeviceId();
+        console.log('Using device ID:', deviceId);
 
-            // Load content immediately after confirming registration
-            await loadContent();
-        } else {
-            console.log('ℹ️ Screen found but not registered');
-            showRegistrationSection(screenData);
-        }
-    } catch (error) {
-        console.error('❌ Status check failed:', error);
-        showConnectionError();
-    }
-}
-
-// Função para processar atualizações de registro
-async function handleRegistrationUpdate(data) {
-    console.log('🔄 Processando atualização de registro:', data);
-
-    try {
-        const screenData = await getScreenData();
-        
-        if (data.screenId === screenData.screenId && data.registered) {
-            console.log('✅ Screen registered, updating interface');
-            showPresentationSection();
-            await loadContent(); // Load content after registration
-            startPresentation();
-        }
-    } catch (error) {
-        console.error('❌ Error processing update:', error);
-    }
-}
-
-// Função para inicializar SSE
-function initSSE() {
-    console.log('🔄 Iniciando SSE...');
-    if (eventSource) {
-        console.log('Fechando conexão SSE existente');
-        eventSource.close();
-    }
-
-    try {
-        eventSource = new EventSource(`${MASTER_URL}/events`);
-
-        eventSource.onopen = () => {
-            console.log('✅ SSE conectado ao master');
-            reconnectAttempts = 0;
-            checkConnectionStatus();
-        };
-
-        // Update eventSource message handler
-        eventSource.onmessage = async (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                console.log('📨 SSE message received:', data);
-
-                const screenData = await getScreenData();
-                
-                if (data.screenId === screenData.screenId) {
-                    console.log('✨ Processing message for this screen');
-                    if (data.type === 'screen_update') {
-                        if (data.content) {
-                            console.log('New content received:', {
-                                contentLength: data.content.length,
-                                sample: Array.isArray(data.content) ? 
-                                    data.content[0]?.substring(0, 100) + '...' : 
-                                    data.content.substring(0, 100) + '...'
-                            });
-                            
-                            currentContent = Array.isArray(data.content) ? data.content : [data.content];
-                            currentIndex = 0;
-                            showSlide();
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('❌ Error processing SSE message:', error);
+        // First get screen data from slave
+        const screenResponse = await fetch(`${slaveUrl}/screen-data`, {
+            headers: {
+                'Accept': 'application/json',
+                'Cache-Control': 'no-cache',
+                'Content-Type': 'application/json',
+                'X-Device-ID': deviceId
             }
-        };
+        });
 
-        eventSource.onerror = (error) => {
-            console.error('❌ Erro SSE:', error);
-            eventSource.close();
+        if (!screenResponse.ok) {
+            throw new Error(`Failed to get screen data: ${screenResponse.status}`);
+        }
 
-            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                reconnectAttempts++;
-                const delay = RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
-                console.log(`🔄 Reconectando em ${delay}ms (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
-                setTimeout(initSSE, delay);
-            } else {
-                console.error('❌ Máximo de tentativas atingido');
-                showConnectionError();
-            }
-        };
-    } catch (error) {
-        console.error('❌ Erro ao iniciar SSE:', error);
-        showConnectionError();
-    }
-}
+        const screenData = await screenResponse.json();
+        console.log('📱 Dados recebidos do slave:', screenData);
 
-// Função para registrar a tela no master
-async function registerScreen() {
-    try {
-        const screenData = await getScreenData();
-        const { pin, screenId } = screenData;
+        if (!screenData.screenId || !screenData.pin) {
+            throw new Error('Invalid screen data received');
+        }
 
-        console.log('📝 Tentando registrar tela:', { pin, screenId });
+        // Register with master
+        console.log('📝 Registrando no master...', {
+            screenId: screenData.screenId,
+            pin: screenData.pin,
+            slaveUrl
+        });
 
-        const response = await fetch(`${MASTER_URL}/register`, {
+        const masterResponse = await fetch(`${MASTER_URL}/register`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                pin,
-                screenId,
-                slaveUrl: SLAVE_URL
+                screenId: screenData.screenId,
+                pin: screenData.pin,
+                slaveUrl: slaveUrl
             })
         });
 
-        const data = await response.json();
+        const masterData = await masterResponse.json();
         
-        if (!response.ok) {
-            throw new Error(data.message || 'Falha no registro');
+        if (!masterResponse.ok) {
+            throw new Error(masterData.message || 'Master registration failed');
         }
 
-        console.log('✅ Registro bem sucedido:', data);
+        // Only proceed with slave registration if master registration was successful
+        if (masterData.success) {
+            console.log('✅ Master registration successful, registering with slave...');
+            
+            const slaveRegResponse = await fetch(`${slaveUrl}/register`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    screenId: screenData.screenId,
+                    pin: screenData.pin,
+                    masterUrl: MASTER_URL
+                })
+            });
 
-        if (data.success) {
-            // Forçar atualização do cache
-            await cacheScreenData();
-            showPresentationSection();
-            startPresentation();
+            if (!slaveRegResponse.ok) {
+                throw new Error('Failed to register with slave');
+            }
+
+            const slaveResult = await slaveRegResponse.json();
+            if (slaveResult.success) {
+                await Swal.fire('Sucesso!', 'Tela registrada com sucesso!', 'success');
+                await loadDevices();
+            } else {
+                throw new Error(slaveResult.message || 'Slave registration failed');
+            }
         }
     } catch (error) {
         console.error('❌ Erro no registro:', error);
-        showConnectionError();
+        await Swal.fire('Erro', `Falha no registro: ${error.message}`, 'error');
     }
-}
+};
 
-// Função para processar listas de conteúdo
-function handleListContent(container) {
-    // Clear any existing timers
-    if (window.listTimeout) clearTimeout(window.listTimeout);
-    if (window.slideTimeout) clearTimeout(window.slideTimeout);
-    if (window.listInterval) clearInterval(window.listInterval);
+// ...rest of existing code...
 
-    const listItems = Array.from(container.querySelectorAll('.product-list-item'));
-    let currentListIndex = 0;
-    const SECONDS_PER_ITEM = 10;
-    const totalDuration = listItems.length * SECONDS_PER_ITEM * 1000;
-    
-    console.log(`Starting list rotation with ${listItems.length} items, total duration: ${totalDuration}ms`);
+window.useAd = async function(adId) {
+    const screenId = prompt('Digite o ID da tela onde deseja exibir este anúncio:');
+    if (!screenId) return;
 
-    function updateFeaturedProduct(currentItem) {
-        // Remove active class from all items
-        listItems.forEach(item => item.classList.remove('active'));
-        currentItem.classList.add('active');
+    try {
+        const response = await fetch(`${MASTER_URL}/api/screens/${screenId}/ad`, {
+            method: 'PUT',
+            headers: { 
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ adId })
+        });
 
-        const featuredImage = container.querySelector('.featured-image');
-        const featuredName = container.querySelector('.featured-name');
-        const featuredPrice = container.querySelector('.featured-price');
-
-        // Update image
-        if (featuredImage) {
-            let imageUrl = currentItem.dataset.imageUrl;
-            if (imageUrl && !imageUrl.startsWith('http')) {
-                imageUrl = `${MASTER_URL}${imageUrl}`;
-            }
-            featuredImage.src = imageUrl;
-            featuredImage.onerror = () => {
-                console.error('Error loading image:', imageUrl);
-                featuredImage.src = `${MASTER_URL}/files/default-product.png`;
-            };
+        if (response.ok) {
+            alert('Anúncio aplicado com sucesso!');
+        } else {
+            throw new Error('Falha ao atualizar anúncio');
         }
-
-        // Update text content
-        if (featuredName) {
-            featuredName.textContent = currentItem.dataset.name || 'Sem nome';
-        }
-        if (featuredPrice) {
-            featuredPrice.textContent = currentItem.dataset.price || 'Preço indisponível';
-        }
-
-        // Scroll into view with offset to ensure visibility
-        const container = document.querySelector('.products-list');
-        if (container) {
-            const itemOffset = currentItem.offsetTop;
-            container.scrollTo({
-                top: itemOffset - container.clientHeight / 2 + currentItem.clientHeight / 2,
-                behavior: 'smooth'
-            });
-        }
-        
-        console.log(`Updated to item ${currentListIndex + 1} of ${listItems.length}`);
+    } catch (error) {
+        console.error('Erro:', error);
+        alert('Erro ao aplicar anúncio: ' + error.message);
     }
+};
 
-    // Use setInterval instead of recursive setTimeout
-    let completedRotations = 0;
-    const startTime = Date.now();
-    
-    window.listInterval = setInterval(() => {
-        const elapsedTime = Date.now() - startTime;
-        
-        if (elapsedTime >= totalDuration) {
-            clearInterval(window.listInterval);
-            currentIndex = (currentIndex + 1) % currentContent.length;
-            showSlide();
+// ...existing code...
+
+async function deleteDevice(deviceId) {
+    try {
+        const confirmation = await Swal.fire({
+            title: 'Confirmação',
+            text: 'Tem certeza que deseja excluir esta tela?',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Sim, excluir',
+            cancelButtonText: 'Cancelar'
+        });
+
+        if (!confirmation.isConfirmed) {
             return;
         }
 
-        updateFeaturedProduct(listItems[currentListIndex]);
-        currentListIndex = (currentListIndex + 1) % listItems.length;
-        
-        if (currentListIndex === 0) {
-            completedRotations++;
-            console.log(`Completed rotation ${completedRotations}`);
-        }
-    }, SECONDS_PER_ITEM * 1000);
-
-    // Show first item immediately
-    updateFeaturedProduct(listItems[0]);
-}
-
-// Update showSlide to better handle list content
-function showSlide() {
-    if (!currentContent || !Array.isArray(currentContent) || currentContent.length === 0) {
-        showWaitingScreen();
-        return;
-    }
-
-    const slideContent = document.getElementById('slideContent');
-    if (!slideContent) return;
-
-    // Clear all existing timers
-    if (window.slideTimeout) clearTimeout(window.slideTimeout);
-    if (window.listTimeout) clearTimeout(window.listTimeout);
-    if (window.listInterval) clearInterval(window.listInterval);
-
-    console.log(`Showing slide ${currentIndex + 1} of ${currentContent.length}`);
-
-    // Remove previous content with fade
-    slideContent.classList.remove('in');
-    
-    setTimeout(() => {
-        try {
-            let content = currentContent[currentIndex];
-            
-            // Fix URLs
-            content = content.replace(
-                /background(?:-image)?\s*:\s*url\(['"]?(?:http:\/\/localhost:\d+)?(\/[^'"\)]+)['"]?\)/g,
-                (match, path) => `background: url('${MASTER_URL}${path}')`
-            );
-
-            // Update content
-            slideContent.innerHTML = content;
-            
-            // Force reflow
-            void slideContent.offsetWidth;
-            slideContent.classList.add('in');
-
-            // Handle content based on type
-            if (content.includes('product-list-item')) {
-                handleListContent(slideContent);
-            } else {
-                // For non-list slides
-                window.slideTimeout = setTimeout(() => {
-                    currentIndex = (currentIndex + 1) % currentContent.length;
-                    showSlide();
-                }, 10000);
-            }
-        } catch (error) {
-            console.error('Error displaying slide:', error);
-            currentIndex = (currentIndex + 1) % currentContent.length;
-            showSlide();
-        }
-    }, 1000);
-}
-
-// Update loadContent function to better handle the response
-async function loadContent() {
-    try {
-        const screenData = await getScreenData();
-        console.log('🔄 Loading content for screen:', screenData.screenId);
-        
-        const response = await fetch('/content', {
-            headers: {
-                'X-Screen-ID': screenData.screenId,
-                'X-Device-ID': appState.deviceId
+        const response = await fetch(`${MASTER_URL}/api/screen/${deviceId}`, {
+            method: 'DELETE',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             }
         });
-        
+
+        if (!response.ok) {
+            throw new Error('Falha ao excluir tela');
+        }
+
+        const data = await response.json();
+        if (data.success) {
+            Swal.fire('Sucesso!', 'Tela excluída com sucesso', 'success');
+            loadDevices(); // Recarrega a lista de dispositivos
+        } else {
+            throw new Error(data.message || 'Erro ao excluir tela');
+        }
+    } catch (error) {
+        console.error('Erro ao excluir tela:', error);
+        Swal.fire('Erro', 'Erro ao excluir tela: ' + error.message, 'error');
+    }
+}
+
+// ...existing code...
+
+async function scheduleAd(adId, screenId, scheduleDate, scheduleTime) {
+    try {
+        const response = await fetch(`${MASTER_URL}/api/schedule-ad`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ adId, screenId, scheduleDate, scheduleTime })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            try {
+                const errorData = JSON.parse(errorText);
+                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+            } catch (e) {
+                throw new Error(errorText);
+            }
+        }
+
+        const data = await response.json();
+        if (data.success) {
+            alert('Anúncio agendado com sucesso!');
+        } else {
+            throw new Error(data.message || 'Falha ao agendar anúncio');
+        }
+    } catch (error) {
+        console.error('Erro ao agendar anúncio:', error);
+        alert('Erro ao agendar anúncio: ' + error.message);
+    }
+}
+
+// ...existing code...
+
+async function loadScreens() {
+    try {
+        const response = await fetch(`${MASTER_URL}/screens`);
         const data = await response.json();
         
-        if (!data || !data.content) {
-            console.error('❌ No content in response');
-            showWaitingScreen();
-            return;
+        if (data.success) {
+            const container = document.getElementById('deviceListContainer');
+            container.innerHTML = '';
+            
+            data.screens.forEach(screen => {
+                const deviceElement = createDeviceElement(screen);
+                container.appendChild(deviceElement);
+            });
         }
-
-        // Ensure content is only applied if it matches our screen
-        if (data.screenId && data.screenId !== screenData.screenId) {
-            console.log('⚠️ Received content for different screen, ignoring');
-            return;
-        }
-
-        currentContent = Array.isArray(data.content) ? data.content : [data.content];
-        currentIndex = 0;
-        
-        console.log('Content loaded for screen:', {
-            screenId: screenData.screenId,
-            items: currentContent.length
-        });
-        
-        showSlide();
     } catch (error) {
-        console.error('❌ Error loading content:', error);
-        showWaitingScreen();
+        console.error('Error loading screens:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Erro',
+            text: 'Falha ao carregar as telas'
+        });
     }
 }
 
-// Chamar initialize quando o DOM estiver pronto
+// Adicionar chamada automática
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('Document ready, initializing...');
-    initialize().catch(error => {
-        console.error('Failed to initialize:', error);
-        showConnectionError();
-    });
+    loadScreens();
+    // Recarregar a lista a cada 5 segundos
+    setInterval(loadScreens, 5000);
 });
+
+// ...rest of existing code...
+
+async function loadScreenCredentials() {
+    try {
+        // First, get the screen data from slave
+        const slaveUrl = document.getElementById('slaveUrl').value.trim();
+        const response = await fetch(`${slaveUrl}/screen-data`);
+        const data = await response.json();
+        
+        // Auto-fill the form with slave's data
+        document.getElementById('screenId').value = data.screenId;
+        document.getElementById('pin').value = data.pin;
+        
+        console.log('📱 Dados carregados do slave:', data);
+    } catch (error) {
+        console.error('❌ Erro ao carregar dados do slave:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Erro',
+            text: 'Não foi possível carregar os dados da tela'
+        });
+    }
+}
+
+// ...existing code...
+
+// Update the registration function to handle device-specific credentials
+window.registerScreen = async function() {
+    try {
+        const slaveUrl = document.getElementById('slaveUrl').value.trim();
+        if (!slaveUrl) {
+            Swal.fire('Erro', 'URL do slave é obrigatória', 'error');
+            return;
+        }
+
+        // Get stored deviceId or generate new one
+        const deviceId = localStorage.getItem('deviceId') || generateDeviceId();
+        console.log('Using stored/generated device ID:', deviceId);
+
+        // First get screen data from slave
+        const screenResponse = await fetch(`${slaveUrl}/screen-data`, {
+            headers: {
+                'Accept': 'application/json',
+                'Cache-Control': 'no-cache',
+                'Content-Type': 'application/json',
+                'X-Device-ID': deviceId
+            }
+        });
+
+        if (!screenResponse.ok) {
+            throw new Error(`Failed to get screen data: ${screenResponse.status}`);
+        }
+
+        const screenData = await screenResponse.json();
+        console.log('📱 Dados recebidos do slave:', screenData);
+
+        // Store credentials in localStorage
+        localStorage.setItem('screenCredentials', JSON.stringify({
+            screenId: screenData.screenId,
+            pin: screenData.pin,
+            deviceId: deviceId
+        }));
+
+        console.log('📝 Registrando no master...', {
+            screenId: screenData.screenId,
+            pin: screenData.pin,
+            slaveUrl
+        });
+
+        const masterResponse = await fetch(`${MASTER_URL}/register`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Device-ID': deviceId
+            },
+            body: JSON.stringify({
+                screenId: screenData.screenId,
+                pin: screenData.pin,
+                slaveUrl: slaveUrl
+            })
+        });
+
+        if (!masterResponse.ok) {
+            const errorData = await masterResponse.json();
+            throw new Error(errorData.message || 'Master registration failed');
+        }
+
+        const masterData = await masterResponse.json();
+        if (masterData.success) {
+            await Swal.fire('Sucesso!', 'Tela registrada com sucesso!', 'success');
+            await loadDevices();
+        }
+
+    } catch (error) {
+        console.error('❌ Erro no registro:', error);
+        await Swal.fire('Erro', `Falha no registro: ${error.message}`, 'error');
+    }
+};
+
+// Add function to generate device ID (if not already present)
+function generateDeviceId() {
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(2, 15);
+    const browserInfo = navigator.userAgent.replace(/[^a-zA-Z0-9]/g, '').substring(0, 10);
+    const deviceId = `device_${timestamp}_${random}_${browserInfo}`;
+    localStorage.setItem('deviceId', deviceId);
+    return deviceId;
+}
+
+// ...existing code...

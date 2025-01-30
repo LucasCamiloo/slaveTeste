@@ -1156,3 +1156,114 @@ app.post('/register', async (req, res) => {
 });
 
 // ...existing code...
+
+app.get('/screen-data', async (req, res) => {
+    try {
+        const deviceId = req.headers['x-device-id'];
+        console.log('📱 Slave received screen data request:', { deviceId });
+
+        // Find existing screen data
+        let screenData = await ScreenData.findOne({
+            $or: [
+                { deviceId },
+                { screenId: deviceId }
+            ]
+        });
+
+        // If no existing data, create new
+        if (!screenData) {
+            const newScreenData = {
+                deviceId,
+                screenId: generateRandomString(8),
+                pin: generateRandomString(4).toUpperCase(),
+                registered: false,
+                content: null,
+                lastUpdate: new Date()
+            };
+
+            screenData = await ScreenData.create(newScreenData);
+            console.log('✨ Generated new screen data:', newScreenData);
+        }
+
+        // Return consistent response
+        const response = {
+            screenId: screenData.screenId,
+            pin: screenData.pin,
+            registered: screenData.registered,
+            lastUpdate: screenData.lastUpdate
+        };
+
+        console.log('📤 Slave sending screen data:', response);
+        res.json(response);
+
+    } catch (error) {
+        console.error('❌ Error handling screen data request:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+app.post('/register', async (req, res) => {
+    try {
+        const { pin, screenId, masterUrl } = req.body;
+        console.log('📝 Slave received registration request:', { pin, screenId, masterUrl });
+
+        // Find screen data
+        const screenData = await ScreenData.findOne({
+            $or: [
+                { screenId },
+                { deviceId: screenId }
+            ]
+        });
+
+        if (!screenData) {
+            console.error('❌ Screen not found:', screenId);
+            return res.status(404).json({
+                success: false,
+                message: 'Screen not found'
+            });
+        }
+
+        console.log('Comparing PINs:', {
+            received: pin,
+            stored: screenData.pin
+        });
+
+        if (pin !== screenData.pin) {
+            console.error('❌ PIN mismatch');
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid PIN'
+            });
+        }
+
+        // Update registration
+        screenData.registered = true;
+        screenData.masterUrl = masterUrl;
+        screenData.lastUpdate = new Date();
+        await screenData.save();
+
+        console.log('✅ Slave registration successful:', {
+            screenId,
+            registered: true
+        });
+
+        res.json({
+            success: true,
+            message: 'Registration successful',
+            screenId: screenData.screenId,
+            registered: true
+        });
+
+    } catch (error) {
+        console.error('❌ Registration error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// ...existing code...

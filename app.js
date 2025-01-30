@@ -1267,3 +1267,56 @@ app.post('/register', async (req, res) => {
 });
 
 // ...existing code...
+
+// Update screen data endpoint to maintain consistent credentials
+app.get('/screen-data', async (req, res) => {
+    try {
+        const deviceId = req.headers['x-device-id'];
+        console.log('📱 Screen data request received:', { deviceId });
+
+        if (!deviceId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Device ID is required'
+            });
+        }
+
+        // Try to find existing screen data by deviceId
+        let screenData = await ScreenData.findOne({ deviceId });
+
+        if (!screenData) {
+            // Only generate new credentials if none exist for this device
+            const newScreenData = {
+                deviceId,
+                screenId: deviceId, // Use deviceId as screenId for consistency
+                pin: generateRandomString(4).toUpperCase(),
+                registered: false,
+                content: null,
+                lastUpdate: new Date()
+            };
+            
+            screenData = await ScreenData.create(newScreenData);
+            console.log('✨ Created new screen data:', newScreenData);
+        }
+
+        // Return consistent response
+        const response = {
+            screenId: screenData.screenId,
+            pin: screenData.pin,
+            registered: screenData.registered,
+            lastUpdate: screenData.lastUpdate
+        };
+
+        console.log('📤 Sending screen data response:', response);
+        res.json(response);
+
+    } catch (error) {
+        console.error('❌ Error in /screen-data:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+});
+
+// ...existing code...
